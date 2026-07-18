@@ -2,49 +2,36 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-
+from app.common.handlers import register_exception_handlers
+from app.router import register_routers
 from app.core.config import settings
 from app.core.logging import setup_logging
-
+from app.modules.system.router import router as system_router
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-
-    # startup
     setup_logging()
 
-    logger.info(
-        "Enterprise AI Assistant starting..."
-    )
+    logger.info("Enterprise AI Assistant starting...")
 
     yield
 
-    # shutdown
-
-    logger.info(
-        "Enterprise AI Assistant stopped."
-    )
+    logger.info("Enterprise AI Assistant stopped.")
 
 
-def create_app():
-
+def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
         lifespan=lifespan,
     )
 
-
-    @app.get("/health")
-    async def health_check():
-
-        return {
-            "status": "ok"
-        }
-
+    # 注册系统模块
+    register_exception_handlers(app)
+    register_routers(app)
 
     return app
 
