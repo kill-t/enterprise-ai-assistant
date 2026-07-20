@@ -4,7 +4,7 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from app.infrastructure.database.session import get_db
-from app.modules.conversation.service import ConversationService
+from app.modules.conversation.service.conversation_service import ConversationService
 
 
 def get_conversation_service(

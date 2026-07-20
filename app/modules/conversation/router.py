@@ -3,7 +3,7 @@ from uuid import UUID
 from fastapi import APIRouter
 
 from app.common.dependencies import ConversationServiceDep
-from app.modules.conversation.schemas import (
+from app.modules.conversation.schema.conversation_schema import (
     ConversationCreate,
     ConversationResponse,
 )
