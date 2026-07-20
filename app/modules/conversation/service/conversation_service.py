@@ -2,8 +2,8 @@ from uuid import UUID
 
 from sqlalchemy.orm import Session
 
-from app.modules.conversation.repository import ConversationRepository
-from app.modules.conversation.schemas import (
+from app.modules.conversation.repository.conversation_repository import ConversationRepository
+from app.modules.conversation.schema.conversation_schema import (
     ConversationCreate,
     ConversationResponse,
 )

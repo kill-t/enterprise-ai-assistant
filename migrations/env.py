@@ -8,7 +8,8 @@ from app.core.config import settings
 from app.infrastructure.database.base import Base
 
 # 导入所有 Entity，让 SQLAlchemy 注册元数据
-from app.infrastructure.database.entities.conversation import ConversationEntity
+from app.modules.conversation.entity.conversation import ConversationEntity
+from app.modules.conversation.entity.message import MessageEntity
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

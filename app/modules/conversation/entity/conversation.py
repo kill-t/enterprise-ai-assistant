@@ -1,11 +1,15 @@
 from datetime import datetime
 from uuid import UUID, uuid4
+from typing import TYPE_CHECKING
+if TYPE_CHECKING:
+    from .message import MessageEntity
 
 from sqlalchemy import DateTime, Float, String, Text, func
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.database.base import Base
+
 
 
 class ConversationEntity(Base):
@@ -60,3 +64,8 @@ class ConversationEntity(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+    messages: Mapped[list["MessageEntity"]] = relationship(
+    back_populates="conversation",
+    cascade="all, delete-orphan",
+)
