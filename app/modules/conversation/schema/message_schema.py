@@ -6,6 +6,10 @@ from pydantic import BaseModel, ConfigDict
 from app.common.enums import MessageRole
 
 
+class MessageCreate(BaseModel):
+    content: str
+
+
 class MessageResponse(BaseModel):
 
     id: UUID
@@ -18,7 +22,4 @@ class MessageResponse(BaseModel):
 
     created_at: datetime
 
-
-    model_config = ConfigDict(
-        from_attributes=True
-    )
+    model_config = ConfigDict(from_attributes=True)

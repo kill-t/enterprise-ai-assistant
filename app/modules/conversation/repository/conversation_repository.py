@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from sqlalchemy.orm import Session
+from sqlalchemy import select
 
 from app.modules.conversation.entity.conversation import ConversationEntity
 from app.modules.conversation.schema.conversation_schema import ConversationCreate
@@ -30,3 +31,14 @@ class ConversationRepository:
         self.db.refresh(entity)
 
         return entity
+
+    def get_by_id(
+        self,
+        conversation_id: UUID,
+    ) -> ConversationEntity | None:
+
+        stmt = select(ConversationEntity).where(
+            ConversationEntity.id == conversation_id
+        )
+
+        return self.db.scalar(stmt)

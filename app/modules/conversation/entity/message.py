@@ -8,8 +8,10 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.infrastructure.database.base import Base
 from app.common.enums import MessageRole, MessageStatus
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from .conversation import ConversationEntity
+
 
 class MessageEntity(Base):
     __tablename__ = "messages"
@@ -21,15 +23,19 @@ class MessageEntity(Base):
     )
 
     conversation_id: Mapped[UUID] = mapped_column(
-        ForeignKey("conversations.id",
-                   ondelete="CASCADE",
-        ),
         PGUUID(as_uuid=True),
+        ForeignKey(
+            "conversations.id",
+            ondelete="CASCADE",
+        ),
         nullable=False,
     )
 
     role: Mapped[MessageRole] = mapped_column(
-        Enum(MessageRole),
+        Enum(
+            MessageRole,
+            name="message_role",
+        ),
         nullable=False,
     )
 
@@ -58,13 +64,14 @@ class MessageEntity(Base):
     status: Mapped[MessageStatus] = mapped_column(
         Enum(MessageStatus),
         default=MessageStatus.PENDING,
+        nullable=False,
     )
 
     metadata_: Mapped[dict | None] = mapped_column(
-    "metadata",
-    JSON,
-    nullable=True,
-)
+        "metadata",
+        JSON,
+        nullable=True,
+    )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -72,5 +79,6 @@ class MessageEntity(Base):
     )
 
     conversation: Mapped["ConversationEntity"] = relationship(
-    back_populates="messages",
-)
+        back_populates="messages",
+        lazy="select",
+    )
