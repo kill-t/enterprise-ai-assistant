@@ -12,10 +12,10 @@ class RedisSettings(BaseModel):
     url: str
 
 
-class LLMSettings(BaseModel):
-    api_key: str = ""
-    base_url: str = ""
-    model: str = ""
+class ProviderSettings(BaseModel):
+    api_key: str
+    base_url: str
+    model: str
 
 
 class Settings(BaseSettings):
@@ -31,7 +31,10 @@ class Settings(BaseSettings):
 
     database: DatabaseSettings
     redis: RedisSettings
-    llm: LLMSettings = LLMSettings()
+
+    default_provider: str = "deepseek"
+    deepseek: ProviderSettings
+    openai: ProviderSettings
 
 
 @lru_cache
