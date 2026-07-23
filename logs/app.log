@@ -1,0 +1,117 @@
+2026-07-23 15:24:08 | INFO | app.main | Enterprise AI Assistant starting...
+2026-07-23 15:26:10 | INFO | app.main | Enterprise AI Assistant stopped.
+2026-07-23 15:26:36 | INFO | app.main | Enterprise AI Assistant starting...
+2026-07-23 15:27:52 | INFO | sqlalchemy.engine.Engine | select pg_catalog.version()
+2026-07-23 15:27:52 | INFO | sqlalchemy.engine.Engine | [raw sql] {}
+2026-07-23 15:27:52 | INFO | sqlalchemy.engine.Engine | select current_schema()
+2026-07-23 15:27:52 | INFO | sqlalchemy.engine.Engine | [raw sql] {}
+2026-07-23 15:27:52 | INFO | sqlalchemy.engine.Engine | show standard_conforming_strings
+2026-07-23 15:27:52 | INFO | sqlalchemy.engine.Engine | [raw sql] {}
+2026-07-23 15:27:52 | INFO | sqlalchemy.engine.Engine | BEGIN (implicit)
+2026-07-23 15:27:52 | INFO | sqlalchemy.engine.Engine | INSERT INTO conversations (id, user_id, title, system_prompt, model_name, temperature, total_tokens, is_archived) VALUES (%(id)s::UUID, %(user_id)s::UUID, %(title)s::VARCHAR, %(system_prompt)s::VARCHAR, %(model_name)s::VARCHAR, %(temperature)s, %(total_tokens)s::INTEGER, %(is_archived)s) RETURNING conversations.created_at, conversations.updated_at
+2026-07-23 15:27:52 | INFO | sqlalchemy.engine.Engine | [generated in 0.00099s] {'id': UUID('d97c7755-299d-4c39-a17e-08885bd177e0'), 'user_id': UUID('00000000-0000-0000-0000-000000000001'), 'title': '你好', 'system_prompt': 'string', 'model_name': 'deepseek-chat', 'temperature': 0.7, 'total_tokens': 0, 'is_archived': False}
+2026-07-23 15:27:52 | INFO | sqlalchemy.engine.Engine | COMMIT
+2026-07-23 15:27:52 | INFO | sqlalchemy.engine.Engine | BEGIN (implicit)
+2026-07-23 15:27:52 | INFO | sqlalchemy.engine.Engine | SELECT conversations.id, conversations.user_id, conversations.title, conversations.system_prompt, conversations.model_name, conversations.temperature, conversations.total_tokens, conversations.is_archived, conversations.created_at, conversations.updated_at 
+FROM conversations 
+WHERE conversations.id = %(pk_1)s::UUID
+2026-07-23 15:27:52 | INFO | sqlalchemy.engine.Engine | [generated in 0.00109s] {'pk_1': UUID('d97c7755-299d-4c39-a17e-08885bd177e0')}
+2026-07-23 15:27:52 | INFO | app.modules.conversation.service.conversation_service | Create conversation user_id=00000000-0000-0000-0000-000000000001 conversation_id=d97c7755-299d-4c39-a17e-08885bd177e0
+2026-07-23 15:27:52 | INFO | sqlalchemy.engine.Engine | ROLLBACK
+2026-07-23 15:29:35 | INFO | app.modules.conversation.service.conversation_service | Receive message conversation_id=d97c7755-299d-4c39-a17e-08885bd177e0
+2026-07-23 15:29:35 | INFO | sqlalchemy.engine.Engine | BEGIN (implicit)
+2026-07-23 15:29:35 | INFO | sqlalchemy.engine.Engine | SELECT conversations.id, conversations.user_id, conversations.title, conversations.system_prompt, conversations.model_name, conversations.temperature, conversations.total_tokens, conversations.is_archived, conversations.created_at, conversations.updated_at 
+FROM conversations 
+WHERE conversations.id = %(id_1)s::UUID
+2026-07-23 15:29:35 | INFO | sqlalchemy.engine.Engine | [generated in 0.00067s] {'id_1': UUID('d97c7755-299d-4c39-a17e-08885bd177e0')}
+2026-07-23 15:29:35 | INFO | sqlalchemy.engine.Engine | SELECT messages.id, messages.conversation_id, messages.role, messages.content, messages.model_name, messages.prompt_tokens, messages.completion_tokens, messages.total_tokens, messages.status, messages.metadata, messages.created_at 
+FROM messages 
+WHERE messages.conversation_id = %(conversation_id_1)s::UUID ORDER BY messages.created_at
+2026-07-23 15:29:35 | INFO | sqlalchemy.engine.Engine | [generated in 0.00242s] {'conversation_id_1': UUID('d97c7755-299d-4c39-a17e-08885bd177e0')}
+2026-07-23 15:29:35 | INFO | sqlalchemy.engine.Engine | INSERT INTO messages (id, conversation_id, role, content, model_name, prompt_tokens, completion_tokens, total_tokens, status) VALUES (%(id)s::UUID, %(conversation_id)s::UUID, %(role)s, %(content)s::VARCHAR, %(model_name)s::VARCHAR, %(prompt_tokens)s::INTEGER, %(completion_tokens)s::INTEGER, %(total_tokens)s::INTEGER, %(status)s) RETURNING messages.created_at
+2026-07-23 15:29:35 | INFO | sqlalchemy.engine.Engine | [generated in 0.00418s] {'id': UUID('3991db0f-c78d-4a1c-9e0a-b4afce26e33b'), 'conversation_id': UUID('d97c7755-299d-4c39-a17e-08885bd177e0'), 'role': 'USER', 'content': '你好', 'model_name': 'user', 'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0, 'status': 'COMPLETED'}
+2026-07-23 15:29:35 | INFO | sqlalchemy.engine.Engine | COMMIT
+2026-07-23 15:29:35 | INFO | sqlalchemy.engine.Engine | BEGIN (implicit)
+2026-07-23 15:29:35 | INFO | sqlalchemy.engine.Engine | SELECT messages.id, messages.conversation_id, messages.role, messages.content, messages.model_name, messages.prompt_tokens, messages.completion_tokens, messages.total_tokens, messages.status, messages.metadata, messages.created_at 
+FROM messages 
+WHERE messages.id = %(pk_1)s::UUID
+2026-07-23 15:29:35 | INFO | sqlalchemy.engine.Engine | [generated in 0.03624s] {'pk_1': UUID('3991db0f-c78d-4a1c-9e0a-b4afce26e33b')}
+2026-07-23 15:29:38 | INFO | httpx | HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-23 15:29:39 | INFO | app.modules.conversation.service.conversation_service | LLM response model=deepseek-v4-flash total_tokens=18
+2026-07-23 15:29:39 | INFO | sqlalchemy.engine.Engine | INSERT INTO messages (id, conversation_id, role, content, model_name, prompt_tokens, completion_tokens, total_tokens, status) VALUES (%(id)s::UUID, %(conversation_id)s::UUID, %(role)s, %(content)s::VARCHAR, %(model_name)s::VARCHAR, %(prompt_tokens)s::INTEGER, %(completion_tokens)s::INTEGER, %(total_tokens)s::INTEGER, %(status)s) RETURNING messages.created_at
+2026-07-23 15:29:39 | INFO | sqlalchemy.engine.Engine | [generated in 0.00087s] {'id': UUID('706ced1c-7775-436f-b1db-66a501396a6e'), 'conversation_id': UUID('d97c7755-299d-4c39-a17e-08885bd177e0'), 'role': 'ASSISTANT', 'content': '你好！很高兴见到你。有什么我可以帮你的吗？', 'model_name': 'deepseek-v4-flash', 'prompt_tokens': 6, 'completion_tokens': 12, 'total_tokens': 18, 'status': 'COMPLETED'}
+2026-07-23 15:29:39 | INFO | sqlalchemy.engine.Engine | COMMIT
+2026-07-23 15:29:39 | INFO | sqlalchemy.engine.Engine | BEGIN (implicit)
+2026-07-23 15:29:39 | INFO | sqlalchemy.engine.Engine | SELECT messages.id, messages.conversation_id, messages.role, messages.content, messages.model_name, messages.prompt_tokens, messages.completion_tokens, messages.total_tokens, messages.status, messages.metadata, messages.created_at 
+FROM messages 
+WHERE messages.id = %(pk_1)s::UUID
+2026-07-23 15:29:39 | INFO | sqlalchemy.engine.Engine | [cached since 4.152s ago] {'pk_1': UUID('706ced1c-7775-436f-b1db-66a501396a6e')}
+2026-07-23 15:29:39 | INFO | app.modules.conversation.service.conversation_service | Assistant message saved conversation_id=d97c7755-299d-4c39-a17e-08885bd177e0
+2026-07-23 15:29:39 | INFO | sqlalchemy.engine.Engine | ROLLBACK
+2026-07-23 15:29:55 | INFO | sqlalchemy.engine.Engine | BEGIN (implicit)
+2026-07-23 15:29:55 | INFO | sqlalchemy.engine.Engine | SELECT messages.id, messages.conversation_id, messages.role, messages.content, messages.model_name, messages.prompt_tokens, messages.completion_tokens, messages.total_tokens, messages.status, messages.metadata, messages.created_at 
+FROM messages 
+WHERE messages.conversation_id = %(conversation_id_1)s::UUID ORDER BY messages.created_at
+2026-07-23 15:29:55 | INFO | sqlalchemy.engine.Engine | [cached since 20.37s ago] {'conversation_id_1': UUID('d97c7755-299d-4c39-a17e-08885bd177e0')}
+2026-07-23 15:29:55 | INFO | sqlalchemy.engine.Engine | ROLLBACK
+2026-07-23 15:42:21 | INFO | app.main | Enterprise AI Assistant stopped.
+2026-07-23 15:42:31 | INFO | app.main | Enterprise AI Assistant starting...
+2026-07-23 15:42:31 | INFO | app.main | Enterprise AI Assistant stopped.
+2026-07-23 15:42:37 | INFO | app.main | Enterprise AI Assistant starting...
+2026-07-23 15:43:01 | INFO | app.modules.conversation.service.conversation_service | Receive message conversation_id=d97c7755-299d-4c39-a17e-08885bd177e0
+2026-07-23 15:43:02 | INFO | sqlalchemy.engine.Engine | select pg_catalog.version()
+2026-07-23 15:43:02 | INFO | sqlalchemy.engine.Engine | [raw sql] {}
+2026-07-23 15:43:02 | INFO | sqlalchemy.engine.Engine | select current_schema()
+2026-07-23 15:43:02 | INFO | sqlalchemy.engine.Engine | [raw sql] {}
+2026-07-23 15:43:02 | INFO | sqlalchemy.engine.Engine | show standard_conforming_strings
+2026-07-23 15:43:02 | INFO | sqlalchemy.engine.Engine | [raw sql] {}
+2026-07-23 15:43:02 | INFO | sqlalchemy.engine.Engine | BEGIN (implicit)
+2026-07-23 15:43:02 | INFO | sqlalchemy.engine.Engine | SELECT conversations.id, conversations.user_id, conversations.title, conversations.system_prompt, conversations.model_name, conversations.temperature, conversations.total_tokens, conversations.is_archived, conversations.created_at, conversations.updated_at 
+FROM conversations 
+WHERE conversations.id = %(id_1)s::UUID
+2026-07-23 15:43:02 | INFO | sqlalchemy.engine.Engine | [generated in 0.00088s] {'id_1': UUID('d97c7755-299d-4c39-a17e-08885bd177e0')}
+2026-07-23 15:43:02 | INFO | sqlalchemy.engine.Engine | SELECT messages.id, messages.conversation_id, messages.role, messages.content, messages.model_name, messages.prompt_tokens, messages.completion_tokens, messages.total_tokens, messages.status, messages.metadata, messages.created_at 
+FROM messages 
+WHERE messages.conversation_id = %(conversation_id_1)s::UUID ORDER BY messages.created_at
+2026-07-23 15:43:02 | INFO | sqlalchemy.engine.Engine | [generated in 0.00104s] {'conversation_id_1': UUID('d97c7755-299d-4c39-a17e-08885bd177e0')}
+2026-07-23 15:43:02 | INFO | sqlalchemy.engine.Engine | INSERT INTO messages (id, conversation_id, role, content, model_name, prompt_tokens, completion_tokens, total_tokens, status) VALUES (%(id)s::UUID, %(conversation_id)s::UUID, %(role)s, %(content)s::VARCHAR, %(model_name)s::VARCHAR, %(prompt_tokens)s::INTEGER, %(completion_tokens)s::INTEGER, %(total_tokens)s::INTEGER, %(status)s) RETURNING messages.created_at
+2026-07-23 15:43:02 | INFO | sqlalchemy.engine.Engine | [generated in 0.00093s] {'id': UUID('8fb59161-8c1d-4681-a1f8-476b05c9a9f2'), 'conversation_id': UUID('d97c7755-299d-4c39-a17e-08885bd177e0'), 'role': 'USER', 'content': '今天不太开心', 'model_name': 'user', 'prompt_tokens': 0, 'completion_tokens': 0, 'total_tokens': 0, 'status': 'COMPLETED'}
+2026-07-23 15:43:02 | INFO | sqlalchemy.engine.Engine | COMMIT
+2026-07-23 15:43:02 | INFO | sqlalchemy.engine.Engine | BEGIN (implicit)
+2026-07-23 15:43:02 | INFO | sqlalchemy.engine.Engine | SELECT messages.id, messages.conversation_id, messages.role, messages.content, messages.model_name, messages.prompt_tokens, messages.completion_tokens, messages.total_tokens, messages.status, messages.metadata, messages.created_at 
+FROM messages 
+WHERE messages.id = %(pk_1)s::UUID
+2026-07-23 15:43:02 | INFO | sqlalchemy.engine.Engine | [generated in 0.00139s] {'pk_1': UUID('8fb59161-8c1d-4681-a1f8-476b05c9a9f2')}
+2026-07-23 15:43:05 | INFO | httpx | HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-23 15:43:08 | INFO | app.modules.conversation.service.conversation_service | LLM response model=deepseek-v4-flash total_tokens=152
+2026-07-23 15:43:08 | INFO | sqlalchemy.engine.Engine | INSERT INTO messages (id, conversation_id, role, content, model_name, prompt_tokens, completion_tokens, total_tokens, status) VALUES (%(id)s::UUID, %(conversation_id)s::UUID, %(role)s, %(content)s::VARCHAR, %(model_name)s::VARCHAR, %(prompt_tokens)s::INTEGER, %(completion_tokens)s::INTEGER, %(total_tokens)s::INTEGER, %(status)s) RETURNING messages.created_at
+2026-07-23 15:43:08 | INFO | sqlalchemy.engine.Engine | [generated in 0.00071s] {'id': UUID('cfde7ac7-8dc8-4d57-9a9a-1584e603335c'), 'conversation_id': UUID('d97c7755-299d-4c39-a17e-08885bd177e0'), 'role': 'ASSISTANT', 'content': '感受到你心情不太好，真的很想抱抱你。生活中难免会有低落的时刻，这很正常，你不需要独自承受。如果愿意的话，可以和我聊聊发生了什么，或者只是简单地说说心里话。有时候把情绪说出来，心里会轻松一些。如果不方便说，也可以试试这些小事：  \n1. 深呼吸几次，慢慢吸气、缓缓呼气。  \n2. 给自己倒杯温水，或听一首喜欢的歌。  \n3. 看看窗外，观察一片叶子或云朵的形状。  \n\n记得，你的感受很重要，不开心的时候也可以允许自己暂时停下来。我在这里陪着你。 🌱', 'model_name': 'deepseek-v4-flash', 'prompt_tokens': 25, 'completion_tokens': 127, 'total_tokens': 152, 'status': 'COMPLETED'}
+2026-07-23 15:43:08 | INFO | sqlalchemy.engine.Engine | COMMIT
+2026-07-23 15:43:08 | INFO | sqlalchemy.engine.Engine | BEGIN (implicit)
+2026-07-23 15:43:08 | INFO | sqlalchemy.engine.Engine | SELECT messages.id, messages.conversation_id, messages.role, messages.content, messages.model_name, messages.prompt_tokens, messages.completion_tokens, messages.total_tokens, messages.status, messages.metadata, messages.created_at 
+FROM messages 
+WHERE messages.id = %(pk_1)s::UUID
+2026-07-23 15:43:08 | INFO | sqlalchemy.engine.Engine | [cached since 5.807s ago] {'pk_1': UUID('cfde7ac7-8dc8-4d57-9a9a-1584e603335c')}
+2026-07-23 15:43:08 | INFO | app.modules.conversation.service.conversation_service | Assistant message saved conversation_id=d97c7755-299d-4c39-a17e-08885bd177e0
+2026-07-23 15:43:08 | INFO | sqlalchemy.engine.Engine | ROLLBACK
+2026-07-23 15:49:11 | INFO | app.main | Enterprise AI Assistant stopped.
+2026-07-23 15:49:17 | INFO | app.main | Enterprise AI Assistant starting...
+2026-07-23 15:49:17 | INFO | app.main | Enterprise AI Assistant stopped.
+2026-07-23 15:49:30 | INFO | app.main | Enterprise AI Assistant starting...
+2026-07-23 15:53:19 | INFO | app.main | Enterprise AI Assistant stopped.
+2026-07-23 15:53:44 | INFO | app.main | Enterprise AI Assistant starting...
+2026-07-23 15:54:07 | INFO | app.modules.conversation.service.conversation_service | Receive message conversation_id=d97c7755-299d-4c39-a17e-08885bd177e0
+2026-07-23 15:54:10 | INFO | httpx | HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-23 15:54:18 | INFO | app.modules.conversation.service.conversation_service | LLM response model=deepseek-v4-flash total_tokens=732
+2026-07-23 15:54:18 | INFO | app.modules.conversation.service.conversation_service | Assistant message saved conversation_id=d97c7755-299d-4c39-a17e-08885bd177e0
+2026-07-23 15:56:10 | INFO | app.main | Enterprise AI Assistant stopped.
+2026-07-23 15:56:18 | INFO | app.main | Enterprise AI Assistant starting...
+2026-07-23 15:57:32 | INFO | app.main | Enterprise AI Assistant stopped.
+2026-07-23 15:57:40 | INFO | app.main | Enterprise AI Assistant starting...
+2026-07-23 15:59:04 | INFO | app.main | Enterprise AI Assistant stopped.
+2026-07-23 16:23:11 | INFO | app.main | request_id=- | Enterprise AI Assistant starting...
+2026-07-23 16:23:38 | INFO | app.modules.conversation.service.conversation_service | request_id=4b10c397-33eb-4929-95dd-cc47547a40fe | Receive message conversation_id=d97c7755-299d-4c39-a17e-08885bd177e0
+2026-07-23 16:23:41 | INFO | httpx | request_id=4b10c397-33eb-4929-95dd-cc47547a40fe | HTTP Request: POST https://api.deepseek.com/v1/chat/completions "HTTP/1.1 200 OK"
+2026-07-23 16:23:43 | INFO | app.modules.conversation.service.conversation_service | request_id=4b10c397-33eb-4929-95dd-cc47547a40fe | LLM response model=deepseek-v4-flash total_tokens=825
+2026-07-23 16:23:43 | INFO | app.modules.conversation.service.conversation_service | request_id=4b10c397-33eb-4929-95dd-cc47547a40fe | Assistant message saved conversation_id=d97c7755-299d-4c39-a17e-08885bd177e0
+2026-07-23 16:25:01 | INFO | app.main | request_id=- | Enterprise AI Assistant stopped.

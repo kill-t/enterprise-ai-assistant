@@ -1,5 +1,6 @@
 from uuid import UUID
 
+
 from sqlalchemy.orm import Session
 
 from app.common.enums import MessageRole, MessageStatus
@@ -20,6 +21,9 @@ from app.modules.conversation.schema.conversation_schema import (
 from app.infrastructure.llm.context_manager import ContextManager
 from app.infrastructure.llm.history_mapper import HistoryMapper
 from app.modules.conversation.schema.message_schema import MessageResponse
+from app.common.exception.error_code import ErrorCode
+from app.common.exception.business_exception import BusinessException
+from app.core.loggers import app_logger
 
 
 class ConversationService:
@@ -43,6 +47,12 @@ class ConversationService:
             conversation=conversation,
         )
 
+        app_logger.info(
+            "Create conversation user_id=%s conversation_id=%s",
+            user_id,
+            entity.id,
+        )
+
         return ConversationResponse.model_validate(entity)
 
     def send_message(
@@ -50,12 +60,24 @@ class ConversationService:
         conversation_id: UUID,
         content: str,
     ) -> MessageResponse:
+        app_logger.info(
+            "Receive message conversation_id=%s",
+            conversation_id,
+        )
 
         conversation = self.repository.get_by_id(conversation_id)
 
         if conversation is None:
-            # TODO: Replace with BusinessException in Sprint 6
-            raise ValueError("Conversation not found")
+            app_logger.warning(
+                "Conversation not found conversation_id=%s",
+                conversation_id,
+            )
+
+            raise BusinessException(
+                code=ErrorCode.CONVERSATION_NOT_FOUND,
+                message="Conversation not found",
+                status_code=404,
+            )
 
         history_entities = self.message_repository.list_by_conversation(conversation_id)
 
@@ -94,6 +116,10 @@ class ConversationService:
         )
 
         self.message_repository.create(assistant_message)
+        app_logger.info(
+            "Assistant message saved conversation_id=%s",
+            conversation_id,
+        )
 
         return MessageResponse.model_validate(assistant_message)
 
