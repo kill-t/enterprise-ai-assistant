@@ -1,5 +1,7 @@
 from openai import OpenAI
+import time
 
+from app.core.loggers import llm_logger
 from app.core.config import settings
 from app.infrastructure.llm.base import BaseChatProvider
 from app.infrastructure.llm.schemas import ChatRequest, ChatResponse
@@ -7,7 +9,7 @@ from app.infrastructure.llm.schemas import ChatRequest, ChatResponse
 
 class DeepSeekProvider(BaseChatProvider):
 
-    MODEL_NAME = "deepseek"
+    PROVIDER_NAME = "deepseek"
 
     def __init__(self):
 
@@ -20,12 +22,31 @@ class DeepSeekProvider(BaseChatProvider):
         self,
         request: ChatRequest,
     ) -> ChatResponse:
+        start = time.perf_counter()
 
         response = self.client.chat.completions.create(
             model=settings.deepseek.model,
             messages=self._build_messages(request),
             temperature=request.temperature,
             stream=False,
+        )
+
+        elapsed = time.perf_counter() - start
+        llm_logger.info(
+            (
+                "provider=%s "
+                "model=%s "
+                "prompt_tokens=%s "
+                "completion_tokens=%s "
+                "total_tokens=%s "
+                "latency=%.3fs"
+            ),
+            self.PROVIDER_NAME,
+            response.model,
+            response.usage.prompt_tokens,
+            response.usage.completion_tokens,
+            response.usage.total_tokens,
+            elapsed,
         )
 
         return ChatResponse(

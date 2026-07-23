@@ -2,21 +2,22 @@ import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from app.common.handlers import register_exception_handlers
+
 from app.router import register_routers
 from app.core.config import settings
-from app.core.logging import setup_logging
+from app.core.logger import setup_logging
 from app.modules.system.router import router as system_router
 from app.modules.conversation.api.conversation_router import (
     router as conversation_router,
 )
+from app.common.exception.handler import register_exception_handlers
+from app.middleware.request_id import RequestIdMiddleware
 
 logger = logging.getLogger(__name__)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    setup_logging()
 
     logger.info("Enterprise AI Assistant starting...")
 
@@ -26,6 +27,7 @@ async def lifespan(app: FastAPI):
 
 
 def create_app() -> FastAPI:
+    setup_logging()
     app = FastAPI(
         title=settings.app_name,
         version=settings.app_version,
@@ -38,6 +40,7 @@ def create_app() -> FastAPI:
     # )
 
     app.include_router(conversation_router)
+    app.add_middleware(RequestIdMiddleware)
 
     # 注册系统模块
     register_exception_handlers(app)

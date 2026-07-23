@@ -1,6 +1,9 @@
 from fastapi import APIRouter
-from app.common.exceptions import BusinessException
-from app.common.response import ApiResponse
+
+
+from app.common.exception.business_exception import BusinessException
+from app.common.response.api_response import ApiResponse
+from app.common.exception.error_code import ErrorCode
 
 router = APIRouter(tags=["System"])
 
@@ -8,16 +11,12 @@ router = APIRouter(tags=["System"])
 @router.get("/health")
 async def health():
 
-    return ApiResponse(
-        data={
-            "status":"ok"
-        }
-    )
+    return ApiResponse(data={"status": "ok"})
+
 
 @router.get("/error")
 async def error():
 
     raise BusinessException(
-        code=40001,
-        message="Demo Business Error"
+        code=ErrorCode.VALIDATION_ERROR, message="Demo Business Error"
     )

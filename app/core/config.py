@@ -27,7 +27,6 @@ class Settings(BaseSettings):
 
     app_name: str = "Enterprise AI Assistant"
     app_version: str = "0.1.0"
-    debug: bool = True
 
     database: DatabaseSettings
     redis: RedisSettings
