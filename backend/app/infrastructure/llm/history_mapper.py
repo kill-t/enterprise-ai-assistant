@@ -2,19 +2,20 @@ from app.infrastructure.llm.schemas import (
     ChatMessage,
     ChatRole,
 )
-from app.modules.conversation.entity.message import MessageEntity
+
+from app.infrastructure.memory.schemas import MemoryMessage
 
 
 class HistoryMapper:
 
     def to_chat_messages(
         self,
-        messages: list[MessageEntity],
+        messages: list[MemoryMessage],
     ) -> list[ChatMessage]:
 
         return [
             ChatMessage(
-                role=ChatRole(message.role.value),
+                role=ChatRole(message.role),
                 content=message.content,
             )
             for message in messages

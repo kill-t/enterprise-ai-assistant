@@ -36,13 +36,13 @@ def create_conversation(
     "/{conversation_id}/messages",
     response_model=MessageResponse,
 )
-def send_message(
+async def send_message(
     conversation_id: UUID,
     request: MessageCreate,
     service: ConversationServiceDep,
 ):
 
-    return service.send_message(
+    return await service.send_message(
         conversation_id=conversation_id,
         content=request.content,
     )

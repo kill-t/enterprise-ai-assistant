@@ -5,3 +5,4 @@
 ## 模块
 
 1. [仓库工程基础](01-repository-foundation.md)
+2. [Redis 短期记忆接入](02-memory-dependency-injection.md)

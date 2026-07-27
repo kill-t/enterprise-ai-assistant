@@ -24,13 +24,20 @@ from app.modules.conversation.schema.message_schema import MessageResponse
 from app.common.exception.error_code import ErrorCode
 from app.common.exception.business_exception import BusinessException
 from app.core.loggers import app_logger
+from app.infrastructure.memory.memory_manager import MemoryManager
+from app.infrastructure.memory.schemas import MemoryMessage
 
 
 class ConversationService:
 
-    def __init__(self, db: Session):
+    def __init__(
+        self,
+        db: Session,
+        memory_manager: MemoryManager,
+    ):
         self.repository = ConversationRepository(db)
         self.message_repository = MessageRepository(db)
+        self.memory_manager = memory_manager
         self.provider = ProviderFactory.create()
         self.prompt_builder = PromptBuilder()
         self.context_manager = ContextManager()
@@ -55,7 +62,7 @@ class ConversationService:
 
         return ConversationResponse.model_validate(entity)
 
-    def send_message(
+    async def send_message(
         self,
         conversation_id: UUID,
         content: str,
@@ -79,9 +86,9 @@ class ConversationService:
                 status_code=404,
             )
 
-        history_entities = self.message_repository.list_by_conversation(conversation_id)
+        memory_messages = await self.memory_manager.get_context(str(conversation_id))
 
-        history_messages = self.history_mapper.to_chat_messages(history_entities)
+        history_messages = self.history_mapper.to_chat_messages(memory_messages)
 
         history_messages = self.context_manager.build_history(history_messages)
 
@@ -101,6 +108,13 @@ class ConversationService:
         )
 
         self.message_repository.create(user_message)
+        await self.memory_manager.save_message(
+            str(conversation_id),
+            MemoryMessage(
+                role="user",
+                content=content,
+            ),
+        )
 
         assistant_response = self.provider.chat(request)
 
@@ -116,6 +130,14 @@ class ConversationService:
         )
 
         self.message_repository.create(assistant_message)
+        await self.memory_manager.save_message(
+            str(conversation_id),
+            MemoryMessage(
+                role="assistant",
+                content=assistant_response.content,
+            ),
+        )
+
         app_logger.info(
             "Assistant message saved conversation_id=%s",
             conversation_id,
