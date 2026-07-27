@@ -1,0 +1,553 @@
+# Enterprise AI Assistant - Project Context
+
+> Last Updated: 2026-07-26
+>
+> Purpose:
+> This document records the current architecture, completed modules, coding conventions,
+> design decisions and future roadmap.
+> It should be read before making any modifications to the project.
+
+---
+
+# 1. Project Overview
+
+## Project Name
+
+Enterprise AI Assistant
+
+## Goal
+
+Build an enterprise-level AI Assistant backend for learning modern AI application development.
+
+The project is NOT a simple chatbot.
+
+The target architecture includes:
+
+- Enterprise Conversation System
+- LLM Gateway
+- Prompt Management
+- Short-term Memory
+- Long-term Memory
+- Context Management
+- Tool Calling
+- Agent
+- RAG
+- Streaming Response
+
+The final goal is to become an Agent Platform rather than a chat demo.
+
+---
+
+# 2. Tech Stack
+
+Backend
+
+- Python 3.12
+- FastAPI
+- SQLAlchemy 2.0
+- Alembic
+- PostgreSQL
+- Redis
+- Pydantic V2
+- OpenAI SDK
+
+Dependency Management
+
+- uv
+
+LLM
+
+Current:
+
+- DeepSeek API
+
+Future:
+
+- OpenAI
+- Claude
+- Qwen
+
+---
+
+# 3. Current Architecture
+
+```
+app
+
+├── common
+│
+├── core
+│
+├── infrastructure
+│
+│   ├── database
+│   ├── llm
+│   ├── memory
+│   └── cache
+│
+├── modules
+│
+│   └── conversation
+│
+└── main.py
+```
+
+Architecture:
+
+```
+Router
+
+↓
+
+Service
+
+↓
+
+Repository
+
+↓
+
+Database
+```
+
+Business logic must stay inside Service.
+
+Repositories only access databases.
+
+---
+
+# 4. Database
+
+Current Tables
+
+## conversations
+
+Fields
+
+- id
+- user_id
+- title
+- system_prompt
+- model_name
+- temperature
+- total_tokens
+- is_archived
+- created_at
+- updated_at
+
+---
+
+## messages
+
+Fields
+
+- id
+- conversation_id
+- role
+- content
+- model_name
+- prompt_tokens
+- completion_tokens
+- total_tokens
+- status
+- metadata
+- created_at
+
+---
+
+Relationship
+
+Conversation
+
+1 ---- *
+
+Messages
+
+---
+
+# 5. LLM Layer
+
+Provider abstraction has been completed.
+
+Structure:
+
+```
+BaseChatProvider
+
+        │
+
+        ├── MockProvider
+
+        └── DeepSeekProvider
+```
+
+ProviderFactory selects provider.
+
+Future providers should only implement BaseChatProvider.
+
+ConversationService should never depend on provider implementation.
+
+---
+
+# 6. Prompt System
+
+PromptBuilder already exists.
+
+Responsibilities:
+
+Input
+
+- system prompt
+- conversation history
+- current user message
+- temperature
+
+Output
+
+ChatRequest
+
+PromptBuilder MUST NOT query databases.
+
+It only assembles prompts.
+
+---
+
+# 7. Context Management
+
+Current
+
+ContextManager
+
+Responsibilities
+
+- history truncation
+- context length control
+
+Current implementation
+
+Simple history truncation.
+
+Future
+
+Token-aware context manager.
+
+---
+
+# 8. Memory System
+
+Current architecture
+
+```
+ConversationService
+
+↓
+
+MemoryManager
+
+↓
+
+RedisMemory
+```
+
+Memory interfaces have been abstracted.
+
+Current implementation
+
+Redis short-term memory.
+
+Future implementations
+
+- PostgreSQL Memory
+- Vector Memory
+- Hybrid Memory
+
+ConversationService must never access Redis directly.
+
+Always go through MemoryManager.
+
+---
+
+# 9. Logging
+
+Current
+
+Application Logger
+
+LLM Logger
+
+Request ID Filter
+
+Every request should contain request_id.
+
+Future
+
+Access Log
+
+Error Log
+
+Audit Log
+
+Performance Metrics
+
+---
+
+# 10. Exception System
+
+BusinessException
+
+ErrorCode
+
+Global Exception Handler
+
+Future modules should throw BusinessException instead of ValueError.
+
+---
+
+# 11. Coding Conventions
+
+Service
+
+Responsible for:
+
+- business logic
+- orchestration
+- provider calling
+- prompt building
+- memory
+
+Repository
+
+Responsible only for:
+
+- CRUD
+
+PromptBuilder
+
+Responsible only for:
+
+- prompt assembling
+
+MemoryManager
+
+Responsible only for:
+
+- context storage
+
+Provider
+
+Responsible only for:
+
+- LLM communication
+
+Never mix responsibilities.
+
+---
+
+# 12. Current Progress
+
+Completed
+
+Sprint 1
+
+✅ Project initialization
+
+Sprint 2
+
+✅ Database
+
+Sprint 3
+
+✅ Repository Layer
+
+Sprint 4
+
+✅ Provider abstraction
+
+Sprint 5
+
+✅ Prompt Builder
+
+Sprint 6
+
+✅ Exception
+✅ Logging
+✅ Unified Response
+
+Sprint 7 (Partial)
+
+✅ Memory abstraction
+✅ Redis memory
+✅ Context manager
+✅ History mapper
+✅ Conversation integration
+
+---
+
+# 13. Current TODO
+
+Highest Priority
+
+## 1. Complete Memory Pipeline
+
+Current issue
+
+ConversationService reads Redis but does not fully maintain memory consistency.
+
+Need
+
+save_message()
+
+for both
+
+- user
+- assistant
+
+---
+
+## 2. Async Dependency
+
+ConversationService has become async.
+
+Need
+
+FastAPI Dependency Injection update.
+
+---
+
+## 3. Redis Context Testing
+
+Verify
+
+Redis
+
+↓
+
+MemoryManager
+
+↓
+
+PromptBuilder
+
+↓
+
+DeepSeek
+
+workflow.
+
+---
+
+# 14. Next Roadmap
+
+Sprint 7
+
+Complete Memory
+
+- Redis
+- Context
+- Async
+
+Sprint 8
+
+Streaming Response
+
+- AsyncOpenAI
+- SSE
+- Streaming API
+
+Sprint 9
+
+Tool Calling
+
+- Tool Registry
+- Tool Router
+- ReAct
+
+Sprint 10
+
+RAG
+
+- Vector Store
+- Retriever
+- Knowledge Base
+
+Sprint 11
+
+Long-term Memory
+
+- User Profile
+- Conversation Summary
+
+Sprint 12
+
+Frontend
+
+- Vue3
+- Chat UI
+- Markdown
+- Streaming
+
+Sprint 13
+
+Deployment
+
+- Docker Compose
+- Nginx
+- Production Config
+
+---
+
+# 15. Design Principles
+
+This project follows Clean Architecture principles.
+
+Rules
+
+- Service never writes SQL.
+- Repository never calls LLM.
+- PromptBuilder never queries DB.
+- Provider never knows business logic.
+- MemoryManager hides storage implementation.
+- Router only handles HTTP.
+
+Each module should have a single responsibility.
+
+---
+
+# 16. Future Goal
+
+Final architecture
+
+```
+                User
+
+                  │
+
+             FastAPI API
+
+                  │
+
+         ConversationService
+
+      ┌──────────┴──────────┐
+
+ MemoryManager         PromptBuilder
+
+      │                      │
+
+ Redis / PostgreSQL      LLM Provider
+
+      │                      │
+
+      └──────────┬──────────┘
+
+                 │
+
+               Agent
+
+        ┌────────┼────────┐
+
+     ToolCall    RAG    Workflow
+
+```
+
+This project aims to become an enterprise AI Agent backend suitable for production-level architecture demonstrations.
