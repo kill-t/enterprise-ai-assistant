@@ -1,9 +1,7 @@
-# Learning Notes
+# 学习笔记
 
-This directory records the design, code path, tests, trade-offs, interview talking
-points, and exercises for each completed module.
+本目录记录每个已完成模块的设计、代码调用链、测试、取舍、面试表达和练习。
 
-## Modules
+## 模块
 
-1. [Repository foundation](01-repository-foundation.md)
-
+1. [仓库工程基础](01-repository-foundation.md)

@@ -1,20 +1,17 @@
 # Enterprise AI Assistant
 
-An enterprise office AI assistant project built to demonstrate production-oriented
-AI application backend engineering.
+面向 AI 应用后端岗位的企业办公智能助手项目。
 
-The planned product combines conversational AI, grounded knowledge retrieval,
-MCP-based office tools, controlled multi-agent workflows, human approval, and
-observable task execution.
+项目将逐步实现多轮会话、可追溯知识检索、基于 MCP 的办公工具调用、受控
+多 Agent 工作流、人工审批和可观测的任务执行。
 
-## Repository layout
+## 仓库结构
 
-- `backend/`: FastAPI application, database migrations, and backend tests.
-- `frontend/`: Vue 3 demonstration client.
-- `infra/`: local infrastructure and deployment configuration.
-- `docs/`: architecture decisions, project context, and learning notes.
-- `scripts/`: development and demonstration helpers.
+- `backend/`：FastAPI 应用、数据库迁移和后端测试。
+- `frontend/`：Vue 3 演示界面。
+- `infra/`：本地基础设施与部署配置。
+- `docs/`：架构决策、项目上下文和学习笔记。
+- `scripts/`：开发与演示辅助脚本。
 
-The project is under active development. Setup and demonstration instructions will
-be expanded as each vertical slice becomes runnable.
-
+项目正在迭代中。每完成一个可运行的功能切片，都会补充对应的启动、验证和
+演示说明。

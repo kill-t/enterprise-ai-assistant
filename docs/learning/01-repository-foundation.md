@@ -1,54 +1,47 @@
-# Module 01: Repository Foundation
+# 模块 01：仓库工程基础
 
-## Problem
+## 要解决的问题
 
-The original Git repository lived inside `backend/`. Files in `docs/`, `infra/`,
-`frontend/`, and `scripts/` were therefore outside version control even though they
-belonged to the same product.
+原来的 Git 仓库位于 `backend/` 内，因此 `docs/`、`infra/`、`frontend/` 和
+`scripts/` 虽然属于同一个项目，却不受版本管理。
 
-## Design
+## 设计
 
-The Git worktree now starts at the project root. The existing commit history is
-preserved, while the old tracked backend paths receive a `backend/` prefix. A single
-root `.gitignore` defines repository-wide policy.
+现在 Git 工作区从项目根目录开始。已有提交历史得到保留，原先被跟踪的后端
+路径统一增加 `backend/` 前缀；根目录的 `.gitignore` 负责整个项目的忽略规则。
 
 ```text
-enterprise-ai-assistant/       <- Git worktree
-├── backend/                   <- Python application
-├── frontend/                  <- Vue application
-├── infra/                     <- local and deployment infrastructure
-├── docs/                      <- architecture and learning material
-└── scripts/                   <- developer utilities
+enterprise-ai-assistant/       ← Git 工作区
+├── backend/                   ← Python 应用
+├── frontend/                  ← Vue 应用
+├── infra/                     ← 本地与部署基础设施
+├── docs/                      ← 架构与学习资料
+└── scripts/                   ← 开发辅助工具
 ```
 
-## Important ideas
+## 关键概念
 
-- A Git worktree boundary determines which project files Git can track.
-- The index is Git's proposed next snapshot; it is not the same thing as the working
-  directory.
-- Prefixing the index with `backend/` records the repository relocation without
-  rewriting existing source files or discarding local modifications.
-- Secrets, virtual environments, caches, generated logs, and build outputs are
-  ignored. Tests and documentation are source code and must be tracked.
+- Git 工作区边界决定了 Git 能够跟踪哪些项目文件。
+- 工作区是硬盘上的真实文件；暂存区（Index）是准备提交的下一份快照，两者不同。
+- 为 Index 中的旧路径增加 `backend/` 前缀，可以记录仓库位置迁移，而无需重写
+  业务文件或丢弃本地修改。
+- 密钥、虚拟环境、缓存、运行日志和构建产物应被忽略；测试和文档属于源码，应被跟踪。
 
-## Verification
+## 验证结果
 
-- The current branch is `codex/week1-foundation`.
-- Existing backend history remains reachable.
-- Local memory-pipeline edits remain unstaged and unchanged.
-- Root documentation and infrastructure files are visible to Git.
-- Runtime log files are no longer tracked.
+- 当前分支为 `codex/week1-foundation`。
+- 原有后端历史仍然可访问。
+- 本地 Memory 管线修改仍保持未暂存且未改变。
+- 根目录文档和基础设施文件已被 Git 发现。
+- 运行日志不再被 Git 跟踪。
 
-## Interview explanation
+## 面试表达
 
-"I converted an accidentally nested backend-only repository into a monorepo-style
-worktree. I preserved history, separated the index migration from existing business
-changes, and centralized ignore rules so tests and deployment assets are reviewed
-with the application."
+“我把一个误放在后端目录中的 Git 仓库迁移为项目根目录工作区，保留了已有历史，
+并将仓库迁移和正在开发的业务改动分离。随后统一忽略规则，保证测试、部署配置和
+应用代码都能一起被评审和交付。”
 
-## Exercise
+## 练习
 
-Explain the difference between the working directory, staging area, and commit. Then
-identify where a newly created `backend/tests/test_health.py` would appear in each
-stage of the Git lifecycle.
-
+解释工作区、暂存区和提交历史的区别。然后说明新建
+`backend/tests/test_health.py` 后，它在 Git 生命周期的每个阶段分别位于哪里。
