@@ -1,29 +1,40 @@
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.ext.asyncio import (
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 
 from app.core.config import settings
 
-engine = create_engine(
-    settings.database.url,
+
+def to_async_database_url(database_url: str) -> str:
+    """Use psycopg's async SQLAlchemy dialect without changing Alembic's URL."""
+    if database_url.startswith("postgresql://"):
+        return database_url.replace("postgresql://", "postgresql+psycopg://", 1)
+
+    return database_url
+
+
+engine = create_async_engine(
+    to_async_database_url(settings.database.url),
     echo=False,
     pool_pre_ping=True,
-    future=True,
 )
 
-SessionLocal = sessionmaker(
+SessionLocal = async_sessionmaker(
     bind=engine,
     autoflush=False,
-    autocommit=False,
     expire_on_commit=False,
 )
 
 
-def get_db() -> Generator[Session, None, None]:
-    """Provide a database session for each request."""
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+async def get_db() -> AsyncGenerator[AsyncSession, None]:
+    """Provide one asynchronous database session for each request."""
+    async with SessionLocal() as session:
+        try:
+            yield session
+        except Exception:
+            await session.rollback()
+            raise

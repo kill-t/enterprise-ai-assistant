@@ -1,7 +1,7 @@
 from uuid import UUID
 
-from sqlalchemy.orm import Session
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.conversation.entity.conversation import ConversationEntity
 from app.modules.conversation.schema.conversation_schema import ConversationCreate
@@ -9,10 +9,10 @@ from app.modules.conversation.schema.conversation_schema import ConversationCrea
 
 class ConversationRepository:
 
-    def __init__(self, db: Session):
+    def __init__(self, db: AsyncSession):
         self.db = db
 
-    def create(
+    async def create(
         self,
         user_id: UUID,
         conversation: ConversationCreate,
@@ -27,12 +27,12 @@ class ConversationRepository:
         )
 
         self.db.add(entity)
-        self.db.commit()
-        self.db.refresh(entity)
+        await self.db.flush()
+        await self.db.refresh(entity)
 
         return entity
 
-    def get_by_id(
+    async def get_by_id(
         self,
         conversation_id: UUID,
     ) -> ConversationEntity | None:
@@ -41,4 +41,4 @@ class ConversationRepository:
             ConversationEntity.id == conversation_id
         )
 
-        return self.db.scalar(stmt)
+        return await self.db.scalar(stmt)

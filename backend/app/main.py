@@ -6,12 +6,12 @@ from fastapi import FastAPI
 from app.router import register_routers
 from app.core.config import settings
 from app.core.logger import setup_logging
-from app.modules.system.router import router as system_router
 from app.modules.conversation.api.conversation_router import (
     router as conversation_router,
 )
 from app.common.exception.handler import register_exception_handlers
 from app.middleware.request_id import RequestIdMiddleware
+from app.infrastructure.database.session import engine
 
 logger = logging.getLogger(__name__)
 
@@ -21,9 +21,11 @@ async def lifespan(app: FastAPI):
 
     logger.info("Enterprise AI Assistant starting...")
 
-    yield
-
-    logger.info("Enterprise AI Assistant stopped.")
+    try:
+        yield
+    finally:
+        await engine.dispose()
+        logger.info("Enterprise AI Assistant stopped.")
 
 
 def create_app() -> FastAPI:

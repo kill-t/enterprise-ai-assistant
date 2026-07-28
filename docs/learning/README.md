@@ -6,3 +6,4 @@
 
 1. [仓库工程基础](01-repository-foundation.md)
 2. [Redis 短期记忆接入](02-memory-dependency-injection.md)
+3. [异步数据库与缓存降级](03-async-database-and-cache-fallback.md)

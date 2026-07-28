@@ -22,11 +22,11 @@ router = APIRouter(
     "",
     response_model=ConversationResponse,
 )
-def create_conversation(
+async def create_conversation(
     request: ConversationCreate,
     service: ConversationServiceDep,
 ):
-    return service.create(
+    return await service.create(
         user_id=UUID("00000000-0000-0000-0000-000000000001"),
         conversation=request,
     )
@@ -52,9 +52,9 @@ async def send_message(
     "/{conversation_id}/messages",
     response_model=list[MessageResponse],
 )
-def get_messages(
+async def get_messages(
     conversation_id: UUID,
     service: ConversationServiceDep,
 ):
 
-    return service.get_messages(conversation_id)
+    return await service.get_messages(conversation_id)
