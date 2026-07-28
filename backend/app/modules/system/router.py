@@ -10,12 +10,14 @@ router = APIRouter(tags=["System"])
 
 @router.get("/health")
 async def health():
+    """返回进程级健康状态，供本地检查和容器探针使用。"""
 
     return ApiResponse(data={"status": "ok"})
 
 
 @router.get("/error")
 async def error():
+    """主动抛出业务异常，用于验证全局异常处理器。"""
 
     raise BusinessException(
         code=ErrorCode.VALIDATION_ERROR, message="Demo Business Error"

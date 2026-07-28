@@ -8,3 +8,4 @@
 2. [Redis 短期记忆接入](02-memory-dependency-injection.md)
 3. [异步数据库与缓存降级](03-async-database-and-cache-fallback.md)
 4. [消息状态与模型失败处理](04-message-status-and-model-failure.md)
+5. [中文代码注释与阅读约定](05-code-commenting-conventions.md)

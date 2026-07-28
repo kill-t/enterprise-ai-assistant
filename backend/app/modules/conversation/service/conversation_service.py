@@ -28,11 +28,14 @@ from app.modules.conversation.schema.message_schema import MessageResponse
 
 
 class ConversationService:
+    """编排会话持久化、模型调用、消息状态和短期记忆。"""
+
     def __init__(
         self,
         db: AsyncSession,
         memory_manager: MemoryManager,
     ):
+        """组装当前请求使用的仓储、Provider 和上下文组件。"""
         self.db = db
         self.repository = ConversationRepository(db)
         self.message_repository = MessageRepository(db)
@@ -47,6 +50,7 @@ class ConversationService:
         user_id: UUID,
         conversation: ConversationCreate,
     ) -> ConversationResponse:
+        """创建会话并由 Service 控制事务提交。"""
         entity = await self.repository.create(
             user_id=user_id,
             conversation=conversation,
@@ -61,6 +65,7 @@ class ConversationService:
         conversation_id: UUID,
         content: str,
     ) -> MessageResponse:
+        """保存用户问题、调用模型并持久化助手消息状态。"""
         app_logger.info("收到用户消息 conversation_id=%s", conversation_id)
         conversation = await self.repository.get_by_id(conversation_id)
 
@@ -80,6 +85,7 @@ class ConversationService:
             temperature=conversation.temperature,
         )
 
+        # 用户问题已经被服务端接收，是需要独立持久化的事实记录。
         user_message = MessageEntity(
             conversation_id=conversation_id,
             role=MessageRole.USER,
@@ -92,6 +98,7 @@ class ConversationService:
         await self._commit()
         await self._save_to_memory(conversation_id, user_message)
 
+        # 调用模型前先创建 pending 记录，确保超时或异常也能被追踪。
         assistant_message = MessageEntity(
             conversation_id=conversation_id,
             role=MessageRole.ASSISTANT,
@@ -126,10 +133,12 @@ class ConversationService:
         self,
         conversation_id: UUID,
     ) -> list[MessageResponse]:
+        """返回全部消息，使前端能够展示 pending 和 failed 状态。"""
         entities = await self.message_repository.list_by_conversation(conversation_id)
         return [MessageResponse.model_validate(entity) for entity in entities]
 
     async def _commit(self) -> None:
+        """提交当前事务；提交失败时回滚 Session 并保留原异常。"""
         try:
             await self.db.commit()
         except Exception:
@@ -141,6 +150,7 @@ class ConversationService:
         assistant_message: MessageEntity,
         exc: Exception,
     ) -> None:
+        """将助手消息更新为失败状态，并抛出安全的业务异常。"""
         error = self._to_provider_exception(exc)
         assistant_message.status = MessageStatus.FAILED
         assistant_message.error_code = error.code.value
@@ -157,6 +167,7 @@ class ConversationService:
         raise error
 
     def _to_provider_exception(self, exc: Exception) -> BusinessException:
+        """把 Provider 异常映射为稳定错误码和用户可读中文提示。"""
         if isinstance(exc, (TimeoutError, asyncio.TimeoutError, APITimeoutError)):
             return BusinessException(
                 code=ErrorCode.MODEL_TIMEOUT,
@@ -171,6 +182,7 @@ class ConversationService:
         )
 
     async def _get_history(self, conversation_id: UUID):
+        """优先读取 Redis；缓存不可用或为空时回退到 PostgreSQL。"""
         try:
             memory_messages = await self.memory_manager.get_context(str(conversation_id))
         except Exception:
@@ -190,6 +202,7 @@ class ConversationService:
         return database_history
 
     async def _get_history_from_database(self, conversation_id: UUID):
+        """从数据库读取已完成消息并转换为模型历史。"""
         entities = await self.message_repository.list_completed_by_conversation(
             conversation_id
         )
@@ -206,6 +219,7 @@ class ConversationService:
         )
 
     async def _warm_memory(self, conversation_id: UUID) -> None:
+        """将数据库中的已完成消息逐条回填到空缓存。"""
         entities = await self.message_repository.list_completed_by_conversation(
             conversation_id
         )
@@ -217,6 +231,7 @@ class ConversationService:
         conversation_id: UUID,
         entity: MessageEntity,
     ) -> None:
+        """尽力写入 Redis；缓存故障不得覆盖数据库成功结果。"""
         try:
             await self.memory_manager.save_message(
                 str(conversation_id),

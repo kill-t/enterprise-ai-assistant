@@ -18,17 +18,19 @@ logger = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    """管理应用启动与关闭生命周期，并在关闭时释放数据库连接池。"""
 
-    logger.info("Enterprise AI Assistant starting...")
+    logger.info("Enterprise AI Assistant 正在启动")
 
     try:
         yield
     finally:
         await engine.dispose()
-        logger.info("Enterprise AI Assistant stopped.")
+        logger.info("Enterprise AI Assistant 已停止")
 
 
 def create_app() -> FastAPI:
+    """创建并配置 FastAPI 应用实例。"""
     setup_logging()
     app = FastAPI(
         title=settings.app_name,
@@ -36,15 +38,10 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    # app.include_router(
-    #     conversation_router,
-    #     prefix="/api/v1",
-    # )
-
     app.include_router(conversation_router)
     app.add_middleware(RequestIdMiddleware)
 
-    # 注册系统模块
+    # 异常处理器和模块路由必须在应用启动前完成注册。
     register_exception_handlers(app)
     register_routers(app)
 

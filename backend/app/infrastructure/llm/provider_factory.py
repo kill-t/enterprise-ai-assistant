@@ -6,9 +6,11 @@ from app.infrastructure.llm.providers.deepseek_provider import DeepSeekProvider
 
 
 class ProviderFactory:
+    """根据配置创建对应的大模型 Provider。"""
 
     @staticmethod
     def create() -> BaseChatProvider:
+        """返回默认 Provider，不支持的名称会立即报错。"""
 
         provider = settings.default_provider.lower()
 

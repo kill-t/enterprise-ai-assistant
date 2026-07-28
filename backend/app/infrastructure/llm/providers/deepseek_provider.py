@@ -8,10 +8,12 @@ from app.infrastructure.llm.schemas import ChatRequest, ChatResponse
 
 
 class DeepSeekProvider(BaseChatProvider):
+    """通过 OpenAI 兼容接口调用 DeepSeek 聊天模型。"""
 
     PROVIDER_NAME = "deepseek"
 
     def __init__(self):
+        """根据配置创建 DeepSeek 同步客户端。"""
 
         self.client = OpenAI(
             api_key=settings.deepseek.api_key,
@@ -22,6 +24,7 @@ class DeepSeekProvider(BaseChatProvider):
         self,
         request: ChatRequest,
     ) -> ChatResponse:
+        """执行非流式模型调用，并记录 token 与调用耗时。"""
         start = time.perf_counter()
 
         response = self.client.chat.completions.create(
@@ -61,6 +64,7 @@ class DeepSeekProvider(BaseChatProvider):
         self,
         request: ChatRequest,
     ) -> list[dict]:
+        """将内部消息模型转换为 OpenAI 兼容字典。"""
         return [
             {
                 "role": message.role.value,

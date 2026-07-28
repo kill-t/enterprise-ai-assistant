@@ -2,21 +2,23 @@ from enum import Enum
 
 
 class ErrorCode(str, Enum):
-    # Common
+    """对外稳定的机器错误码集合。"""
+
+    # 通用错误
     INTERNAL_ERROR = "INTERNAL_ERROR"
 
-    # Conversation
+    # 会话错误
     CONVERSATION_NOT_FOUND = "CONVERSATION_NOT_FOUND"
 
-    # Message
+    # 消息与模型调用错误
     MESSAGE_NOT_FOUND = "MESSAGE_NOT_FOUND"
     MODEL_TIMEOUT = "MODEL_TIMEOUT"
     MODEL_REQUEST_FAILED = "MODEL_REQUEST_FAILED"
 
-    # Authentication
+    # 身份认证与授权错误
     UNAUTHORIZED = "UNAUTHORIZED"
 
     FORBIDDEN = "FORBIDDEN"
 
-    # Validation
+    # 请求校验错误
     VALIDATION_ERROR = "VALIDATION_ERROR"

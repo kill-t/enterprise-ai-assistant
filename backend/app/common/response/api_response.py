@@ -6,6 +6,8 @@ T = TypeVar("T")
 
 
 class ApiResponse(BaseModel, Generic[T]):
+    """统一 API 响应结构。"""
+
     code: str
     message: str
     data: T | None = None
@@ -16,6 +18,7 @@ class ApiResponse(BaseModel, Generic[T]):
         data: T,
         message: str = "success",
     ):
+        """构造包含业务数据的成功响应。"""
         return cls(
             code="SUCCESS",
             message=message,
@@ -28,6 +31,7 @@ class ApiResponse(BaseModel, Generic[T]):
         code: str,
         message: str,
     ):
+        """构造不包含业务数据的错误响应。"""
         return cls(
             code=code,
             message=message,

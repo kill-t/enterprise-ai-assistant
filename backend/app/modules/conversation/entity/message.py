@@ -14,6 +14,8 @@ if TYPE_CHECKING:
 
 
 class MessageEntity(Base):
+    """保存单条用户、助手、系统或工具消息的 ORM 实体。"""
+
     __tablename__ = "messages"
 
     id: Mapped[UUID] = mapped_column(

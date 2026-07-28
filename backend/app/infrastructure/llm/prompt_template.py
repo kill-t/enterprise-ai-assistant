@@ -1,10 +1,5 @@
 class PromptTemplate:
-    """
-    Enterprise AI Assistant Prompt Templates.
-
-    Later this class can provide different prompt
-    templates for chat, RAG, SQL, Agent, etc.
-    """
+    """集中管理聊天、RAG 和 Agent 等场景的提示词模板。"""
 
     DEFAULT_SYSTEM_PROMPT = """
 You are Enterprise AI Assistant.
@@ -16,4 +11,5 @@ Use Markdown formatting whenever appropriate.
 
     @classmethod
     def chat(cls) -> str:
+        """返回普通聊天场景的默认系统提示词。"""
         return cls.DEFAULT_SYSTEM_PROMPT

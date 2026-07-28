@@ -1,38 +1,12 @@
 from abc import ABC, abstractmethod
-from app.infrastructure.llm.schemas import (
-    ChatRequest,
-    ChatResponse,
-)
+
+from app.infrastructure.llm.schemas import ChatRequest, ChatResponse
 
 
 class BaseChatProvider(ABC):
+    """所有聊天模型 Provider 必须实现的统一接口。"""
 
     @abstractmethod
-    def chat(
-        self,
-        request: ChatRequest,
-    ) -> ChatResponse:
-        """
-        Send messages to LLM and return response.
-
-        messages example:
-
-        [
-            {
-                "role": "user",
-                "content": "hello"
-            }
-        ]
-
-        """
-
+    def chat(self, request: ChatRequest) -> ChatResponse:
+        """发送标准聊天请求，并返回与厂商实现无关的响应结构。"""
         raise NotImplementedError
-
-
-"""TODO:@abstractmethod
-def provider_name(self) -> str:
-
-
-@property
-@abstractmethod
-def model_name(self) -> str:"""

@@ -7,6 +7,7 @@ from app.infrastructure.llm.schemas import (
 
 
 class MockProvider(BaseChatProvider):
+    """返回固定响应的测试 Provider，不访问外部模型服务。"""
 
     MODEL_NAME = "mock"
 
@@ -14,6 +15,7 @@ class MockProvider(BaseChatProvider):
         self,
         request: ChatRequest,
     ) -> ChatResponse:
+        """生成可预测的模拟聊天响应与 token 用量。"""
 
         return ChatResponse(
             content="Hello, I'm Enterprise AI Assistant.",

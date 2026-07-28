@@ -16,22 +16,31 @@ from app.modules.conversation.service.conversation_service import ConversationSe
 
 
 class FailingProvider:
+    """固定抛出超时异常的模型 Provider。"""
+
     def chat(self, request):
+        """模拟模型在生成回复阶段超时。"""
         raise TimeoutError("模型响应超时")
 
 
 class RecordingMemoryManager:
+    """记录缓存写入的测试替身，用于确认失败消息不会进入上下文。"""
+
     def __init__(self) -> None:
+        """初始化已保存消息列表。"""
         self.saved_messages = []
 
     async def get_context(self, conversation_id: str):
+        """返回空历史，隔离既有上下文对测试的影响。"""
         return []
 
     async def save_message(self, conversation_id: str, message) -> None:
+        """记录服务尝试写入缓存的消息。"""
         self.saved_messages.append(message)
 
 
 def test_model_timeout_persists_failed_assistant_message() -> None:
+    """模型超时后应保留用户消息，并把占位助手消息更新为失败状态。"""
     conversation_id = uuid4()
     db = SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock())
     message_repository = SimpleNamespace(
@@ -59,6 +68,7 @@ def test_model_timeout_persists_failed_assistant_message() -> None:
     service.history_mapper = HistoryMapper()
 
     async def scenario() -> BusinessException:
+        """捕获服务转换后的业务异常，供同步测试断言。"""
         try:
             await service.send_message(conversation_id, "整理会议待办")
         except BusinessException as exc:
@@ -82,6 +92,7 @@ def test_model_timeout_persists_failed_assistant_message() -> None:
 
 
 def test_failed_message_response_exposes_safe_error_details() -> None:
+    """失败消息的响应模型应暴露可安全展示的错误码和提示。"""
     message = MessageEntity(
         id=uuid4(),
         conversation_id=uuid4(),

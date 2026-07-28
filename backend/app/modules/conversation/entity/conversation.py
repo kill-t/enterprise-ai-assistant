@@ -13,6 +13,8 @@ from app.infrastructure.database.base import Base
 
 
 class ConversationEntity(Base):
+    """保存会话配置、累计用量和消息关系的 ORM 实体。"""
+
     __tablename__ = "conversations"
 
     id: Mapped[UUID] = mapped_column(

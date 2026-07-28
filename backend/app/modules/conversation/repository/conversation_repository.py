@@ -8,8 +8,10 @@ from app.modules.conversation.schema.conversation_schema import ConversationCrea
 
 
 class ConversationRepository:
+    """封装会话实体的数据库读写，不负责提交事务。"""
 
     def __init__(self, db: AsyncSession):
+        """保存当前请求使用的异步数据库 Session。"""
         self.db = db
 
     async def create(
@@ -17,6 +19,7 @@ class ConversationRepository:
         user_id: UUID,
         conversation: ConversationCreate,
     ) -> ConversationEntity:
+        """创建会话实体并刷新数据库生成的字段。"""
 
         entity = ConversationEntity(
             user_id=user_id,
@@ -36,6 +39,7 @@ class ConversationRepository:
         self,
         conversation_id: UUID,
     ) -> ConversationEntity | None:
+        """按主键查询会话，不存在时返回 None。"""
 
         stmt = select(ConversationEntity).where(
             ConversationEntity.id == conversation_id

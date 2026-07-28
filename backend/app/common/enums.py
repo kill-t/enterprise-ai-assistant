@@ -2,6 +2,8 @@ from enum import Enum
 
 
 class MessageRole(str, Enum):
+    """消息在对话协议中的角色。"""
+
     SYSTEM = "system"
     USER = "user"
     ASSISTANT = "assistant"
@@ -9,6 +11,8 @@ class MessageRole(str, Enum):
 
 
 class MessageStatus(str, Enum):
+    """助手消息从创建到完成或失败的生命周期状态。"""
+
     PENDING = "pending"
     COMPLETED = "completed"
     FAILED = "failed"

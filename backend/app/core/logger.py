@@ -7,7 +7,8 @@ LOG_DIR = Path("logs")
 LOG_DIR.mkdir(exist_ok=True)
 
 
-def setup_logging():
+def setup_logging() -> None:
+    """配置控制台、应用和模型调用日志处理器。"""
 
     formatter = logging.Formatter(
         fmt=(
@@ -28,18 +29,14 @@ def setup_logging():
 
     request_filter = RequestIdFilter()
 
-    # ==========================
-    # Console
-    # ==========================
+    # 控制台日志用于本地开发和容器标准输出。
     console_handler = logging.StreamHandler()
     console_handler.setFormatter(formatter)
     console_handler.addFilter(request_filter)
 
     root_logger.addHandler(console_handler)
 
-    # ==========================
-    # App Logger
-    # ==========================
+    # 应用日志记录业务流程、异常和降级事件。
     app_handler = logging.FileHandler(
         LOG_DIR / "app.log",
         encoding="utf-8",
@@ -52,9 +49,7 @@ def setup_logging():
     app_logger.addHandler(app_handler)
     app_logger.propagate = True
 
-    # ==========================
-    # LLM Logger
-    # ==========================
+    # 模型日志单独记录 Provider、token 和调用耗时。
     llm_handler = logging.FileHandler(
         LOG_DIR / "llm.log",
         encoding="utf-8",

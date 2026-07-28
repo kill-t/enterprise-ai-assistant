@@ -6,10 +6,12 @@ from app.infrastructure.llm.schemas import ChatRequest, ChatResponse
 
 
 class OpenAIProvider(BaseChatProvider):
+    """OpenAI 聊天模型 Provider 的预留实现。"""
 
     MODEL_NAME = "openai"
 
     def __init__(self):
+        """根据配置创建 OpenAI 兼容客户端。"""
 
         self.client = OpenAI(
             api_key=settings.llm.api_key,
@@ -20,6 +22,7 @@ class OpenAIProvider(BaseChatProvider):
         self,
         request: ChatRequest,
     ) -> ChatResponse:
+        """预留聊天入口，完成实现前主动拒绝调用。"""
 
         raise NotImplementedError
 
@@ -27,6 +30,7 @@ class OpenAIProvider(BaseChatProvider):
         self,
         request: ChatRequest,
     ) -> list[dict]:
+        """将内部消息模型转换为 OpenAI 兼容字典。"""
         return [
             {
                 "role": message.role.value,

@@ -13,6 +13,7 @@ def get_conversation_service(
     db: AsyncSession = Depends(get_db),
     memory_manager: MemoryManager = Depends(get_memory_manager),
 ) -> ConversationService:
+    """组装会话服务及其数据库、短期记忆依赖。"""
     return ConversationService(db, memory_manager)
 
 
