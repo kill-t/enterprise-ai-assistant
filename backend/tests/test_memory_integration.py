@@ -46,7 +46,11 @@ class FakeConversationService:
             role="assistant",
             content="已收到",
             model_name="mock",
+            status="completed",
+            error_code=None,
+            error_message=None,
             created_at="2026-07-27T00:00:00Z",
+            finished_at="2026-07-27T00:00:00Z",
         )
 
 

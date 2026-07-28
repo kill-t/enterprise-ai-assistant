@@ -10,6 +10,8 @@ class ErrorCode(str, Enum):
 
     # Message
     MESSAGE_NOT_FOUND = "MESSAGE_NOT_FOUND"
+    MODEL_TIMEOUT = "MODEL_TIMEOUT"
+    MODEL_REQUEST_FAILED = "MODEL_REQUEST_FAILED"
 
     # Authentication
     UNAUTHORIZED = "UNAUTHORIZED"

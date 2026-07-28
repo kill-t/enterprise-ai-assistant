@@ -8,8 +8,8 @@ from app.core.config import settings
 from app.infrastructure.database.base import Base
 
 # 导入所有 Entity，让 SQLAlchemy 注册元数据
-from app.modules.conversation.entity.conversation import ConversationEntity
-from app.modules.conversation.entity.message import MessageEntity
+from app.modules.conversation.entity.conversation import ConversationEntity  # noqa: F401
+from app.modules.conversation.entity.message import MessageEntity  # noqa: F401
 
 # this is the Alembic Config object, which provides
 # access to the values within the .ini file in use.

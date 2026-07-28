@@ -45,7 +45,7 @@ def test_memory_failure_falls_back_to_database_history() -> None:
     service.message_repository = type(
         "MessageRepositoryStub",
         (),
-        {"list_by_conversation": AsyncMock(return_value=[message])},
+        {"list_completed_by_conversation": AsyncMock(return_value=[message])},
     )()
     service.history_mapper = HistoryMapper()
 
