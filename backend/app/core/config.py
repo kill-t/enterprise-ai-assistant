@@ -1,7 +1,8 @@
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -25,6 +26,14 @@ class ProviderSettings(BaseModel):
     model: str
 
 
+class AuthSettings(BaseModel):
+    """JWT 签名算法、密钥和 Access Token 有效期配置。"""
+
+    secret_key: SecretStr | None = None
+    algorithm: Literal["HS256"] = "HS256"
+    access_token_expire_minutes: int = Field(default=30, gt=0, le=1440)
+
+
 class Settings(BaseSettings):
     """聚合应用运行所需的环境变量配置。"""
 
@@ -39,6 +48,7 @@ class Settings(BaseSettings):
 
     database: DatabaseSettings
     redis: RedisSettings
+    auth: AuthSettings = AuthSettings()
 
     default_provider: str = "deepseek"
     deepseek: ProviderSettings

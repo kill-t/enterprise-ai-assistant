@@ -27,3 +27,11 @@ class UserResponse(BaseModel):
     updated_at: datetime
 
     model_config = ConfigDict(from_attributes=True)
+
+
+class TokenResponse(BaseModel):
+    """登录成功后返回的 Bearer Token 和有效期。"""
+
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
