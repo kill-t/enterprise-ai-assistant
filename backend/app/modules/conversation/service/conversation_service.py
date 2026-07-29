@@ -197,8 +197,8 @@ class ConversationService:
         """调用模型，并将成功或失败结果写回指定助手消息。"""
 
         try:
-            # 当前 Provider 仍为同步实现，在线程中执行以避免阻塞事件循环。
-            assistant_response = await asyncio.to_thread(self.provider.chat, request)
+            # Provider 在基础设施层处理厂商 SDK 适配，Service 只依赖异步统一接口。
+            assistant_response = await self.provider.chat(request)
         except Exception as exc:
             await self._mark_assistant_failed(assistant_message, exc)
 

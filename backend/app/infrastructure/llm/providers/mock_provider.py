@@ -11,11 +11,11 @@ class MockProvider(BaseChatProvider):
 
     MODEL_NAME = "mock"
 
-    def chat(
+    async def chat(
         self,
         request: ChatRequest,
     ) -> ChatResponse:
-        """生成可预测的模拟聊天响应与 token 用量。"""
+        """异步生成可预测的模拟聊天响应与 token 用量。"""
 
         return ChatResponse(
             content="Hello, I'm Enterprise AI Assistant.",

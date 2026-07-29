@@ -10,3 +10,4 @@
 4. [消息状态与模型失败处理](04-message-status-and-model-failure.md)
 5. [中文代码注释与阅读约定](05-code-commenting-conventions.md)
 6. [失败消息原位重试](06-retry-failed-message.md)
+7. [异步 LLM Gateway 基础](07-async-llm-gateway.md)

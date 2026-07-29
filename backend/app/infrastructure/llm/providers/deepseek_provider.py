@@ -1,5 +1,6 @@
-from openai import OpenAI
 import time
+
+from openai import AsyncOpenAI
 
 from app.core.loggers import llm_logger
 from app.core.config import settings
@@ -13,21 +14,21 @@ class DeepSeekProvider(BaseChatProvider):
     PROVIDER_NAME = "deepseek"
 
     def __init__(self):
-        """根据配置创建 DeepSeek 同步客户端。"""
+        """根据配置创建 DeepSeek 异步客户端。"""
 
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             api_key=settings.deepseek.api_key,
             base_url=settings.deepseek.base_url,
         )
 
-    def chat(
+    async def chat(
         self,
         request: ChatRequest,
     ) -> ChatResponse:
-        """执行非流式模型调用，并记录 token 与调用耗时。"""
+        """异步执行非流式模型调用，并记录 token 与调用耗时。"""
         start = time.perf_counter()
 
-        response = self.client.chat.completions.create(
+        response = await self.client.chat.completions.create(
             model=settings.deepseek.model,
             messages=self._build_messages(request),
             temperature=request.temperature,

@@ -19,8 +19,8 @@ from app.modules.conversation.service.conversation_service import ConversationSe
 class FailingProvider:
     """固定抛出超时异常的模型 Provider。"""
 
-    def chat(self, request):
-        """模拟模型在生成回复阶段超时。"""
+    async def chat(self, request):
+        """模拟异步模型在生成回复阶段超时。"""
         raise TimeoutError("模型响应超时")
 
 
@@ -47,8 +47,8 @@ class SuccessfulProvider:
         """初始化调用记录，便于断言原问题没有重复进入上下文。"""
         self.requests = []
 
-    def chat(self, request):
-        """记录模型请求并返回带 token 统计的固定结果。"""
+    async def chat(self, request):
+        """记录异步模型请求并返回带 token 统计的固定结果。"""
         self.requests.append(request)
         return ChatResponse(
             content="已重新生成会议待办",

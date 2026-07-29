@@ -1,4 +1,4 @@
-from openai import OpenAI
+from openai import AsyncOpenAI
 
 from app.core.config import settings
 from app.infrastructure.llm.base import BaseChatProvider
@@ -13,12 +13,12 @@ class OpenAIProvider(BaseChatProvider):
     def __init__(self):
         """根据配置创建 OpenAI 兼容客户端。"""
 
-        self.client = OpenAI(
+        self.client = AsyncOpenAI(
             api_key=settings.llm.api_key,
             base_url=settings.llm.base_url,
         )
 
-    def chat(
+    async def chat(
         self,
         request: ChatRequest,
     ) -> ChatResponse:
