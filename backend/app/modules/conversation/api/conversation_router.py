@@ -61,3 +61,19 @@ async def get_messages(
     """按时间顺序返回指定会话的完整消息列表。"""
 
     return await service.get_messages(conversation_id)
+
+
+@router.post(
+    "/{conversation_id}/messages/{message_id}/retry",
+    response_model=MessageResponse,
+)
+async def retry_failed_message(
+    conversation_id: UUID,
+    message_id: UUID,
+    service: ConversationServiceDep,
+):
+    """重试指定会话中失败的助手消息，并复用原消息记录。"""
+    return await service.retry_failed_message(
+        conversation_id=conversation_id,
+        message_id=message_id,
+    )

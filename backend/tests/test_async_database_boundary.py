@@ -9,6 +9,7 @@ from app.infrastructure.llm.history_mapper import HistoryMapper
 from app.modules.conversation.api.conversation_router import (
     create_conversation,
     get_messages,
+    retry_failed_message,
 )
 from app.modules.conversation.entity.message import MessageEntity
 from app.modules.conversation.service.conversation_service import ConversationService
@@ -32,6 +33,7 @@ def test_database_backed_conversation_handlers_are_async() -> None:
     """访问数据库的会话路由必须保持异步，避免阻塞事件循环。"""
     assert inspect.iscoroutinefunction(create_conversation)
     assert inspect.iscoroutinefunction(get_messages)
+    assert inspect.iscoroutinefunction(retry_failed_message)
 
 
 def test_memory_failure_falls_back_to_database_history() -> None:

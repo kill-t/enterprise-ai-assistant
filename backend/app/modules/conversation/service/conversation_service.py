@@ -13,6 +13,7 @@ from app.infrastructure.llm.context_manager import ContextManager
 from app.infrastructure.llm.history_mapper import HistoryMapper
 from app.infrastructure.llm.prompt_builder import PromptBuilder
 from app.infrastructure.llm.provider_factory import ProviderFactory
+from app.infrastructure.llm.schemas import ChatRequest
 from app.infrastructure.memory.memory_manager import MemoryManager
 from app.infrastructure.memory.schemas import MemoryMessage
 from app.modules.conversation.entity.message import MessageEntity
@@ -109,6 +110,92 @@ class ConversationService:
         await self.message_repository.create(assistant_message)
         await self._commit()
 
+        return await self._generate_assistant_response(
+            conversation_id=conversation_id,
+            request=request,
+            assistant_message=assistant_message,
+        )
+
+    async def retry_failed_message(
+        self,
+        conversation_id: UUID,
+        message_id: UUID,
+    ) -> MessageResponse:
+        """将失败助手消息恢复为 pending，并使用原问题重新调用模型。"""
+        conversation = await self.repository.get_by_id(conversation_id)
+        if conversation is None:
+            raise BusinessException(
+                code=ErrorCode.CONVERSATION_NOT_FOUND,
+                message="会话不存在",
+                status_code=404,
+            )
+
+        assistant_message = await self.message_repository.get_by_id(message_id)
+        if assistant_message is None or assistant_message.conversation_id != conversation_id:
+            raise BusinessException(
+                code=ErrorCode.MESSAGE_NOT_FOUND,
+                message="消息不存在",
+                status_code=404,
+            )
+
+        if (
+            assistant_message.role != MessageRole.ASSISTANT
+            or assistant_message.status != MessageStatus.FAILED
+        ):
+            raise BusinessException(
+                code=ErrorCode.MESSAGE_NOT_RETRYABLE,
+                message="只有失败的助手消息可以重试",
+                status_code=409,
+            )
+
+        original_user_message = await self._find_original_user_message(
+            conversation_id=conversation_id,
+            assistant_message_id=message_id,
+        )
+
+        # 原用户消息会作为当前问题传入，因此必须从历史中排除，避免重复出现。
+        history_messages = await self._get_history(
+            conversation_id,
+            exclude_message_id=original_user_message.id,
+        )
+        request = self.prompt_builder.build(
+            system_prompt=conversation.system_prompt,
+            history=self.context_manager.build_history(history_messages),
+            user_message=original_user_message.content,
+            temperature=conversation.temperature,
+        )
+
+        # 复用原记录可保证前端消息 ID 与审计记录稳定，不会制造重复助手消息。
+        assistant_message.content = ""
+        assistant_message.status = MessageStatus.PENDING
+        assistant_message.error_code = None
+        assistant_message.error_message = None
+        assistant_message.finished_at = None
+        assistant_message.prompt_tokens = 0
+        assistant_message.completion_tokens = 0
+        assistant_message.total_tokens = 0
+        await self.message_repository.update(assistant_message)
+        await self._commit()
+
+        app_logger.info(
+            "开始重试失败助手消息 conversation_id=%s message_id=%s",
+            conversation_id,
+            message_id,
+        )
+        return await self._generate_assistant_response(
+            conversation_id=conversation_id,
+            request=request,
+            assistant_message=assistant_message,
+        )
+
+    async def _generate_assistant_response(
+        self,
+        conversation_id: UUID,
+        request: ChatRequest,
+        assistant_message: MessageEntity,
+    ) -> MessageResponse:
+        """调用模型，并将成功或失败结果写回指定助手消息。"""
+
         try:
             # 当前 Provider 仍为同步实现，在线程中执行以避免阻塞事件循环。
             assistant_response = await asyncio.to_thread(self.provider.chat, request)
@@ -181,8 +268,12 @@ class ConversationService:
             status_code=502,
         )
 
-    async def _get_history(self, conversation_id: UUID):
-        """优先读取 Redis；缓存不可用或为空时回退到 PostgreSQL。"""
+    async def _get_history(
+        self,
+        conversation_id: UUID,
+        exclude_message_id: UUID | None = None,
+    ):
+        """优先读取 Redis；必要时回退数据库，并可排除正在重试的原问题。"""
         try:
             memory_messages = await self.memory_manager.get_context(str(conversation_id))
         except Exception:
@@ -191,17 +282,32 @@ class ConversationService:
                 conversation_id,
                 exc_info=True,
             )
-            return await self._get_history_from_database(conversation_id)
+            return await self._get_history_from_database(
+                conversation_id,
+                exclude_message_id=exclude_message_id,
+            )
 
         if memory_messages:
-            return self.history_mapper.to_chat_messages(memory_messages)
+            filtered_messages = [
+                message
+                for message in memory_messages
+                if exclude_message_id is None or message.id != exclude_message_id
+            ]
+            return self.history_mapper.to_chat_messages(filtered_messages)
 
-        database_history = await self._get_history_from_database(conversation_id)
+        database_history = await self._get_history_from_database(
+            conversation_id,
+            exclude_message_id=exclude_message_id,
+        )
         if database_history:
             await self._warm_memory(conversation_id)
         return database_history
 
-    async def _get_history_from_database(self, conversation_id: UUID):
+    async def _get_history_from_database(
+        self,
+        conversation_id: UUID,
+        exclude_message_id: UUID | None = None,
+    ):
         """从数据库读取已完成消息并转换为模型历史。"""
         entities = await self.message_repository.list_completed_by_conversation(
             conversation_id
@@ -215,7 +321,37 @@ class ConversationService:
                     created_at=entity.created_at,
                 )
                 for entity in entities
+                if exclude_message_id is None or entity.id != exclude_message_id
             ]
+        )
+
+    async def _find_original_user_message(
+        self,
+        conversation_id: UUID,
+        assistant_message_id: UUID,
+    ) -> MessageEntity:
+        """查找失败助手消息前最近的已完成用户消息，作为重试的原问题。"""
+        messages = await self.message_repository.list_by_conversation(conversation_id)
+        assistant_index = next(
+            (
+                index
+                for index, message in enumerate(messages)
+                if message.id == assistant_message_id
+            ),
+            None,
+        )
+        if assistant_index is not None:
+            for message in reversed(messages[:assistant_index]):
+                if (
+                    message.role == MessageRole.USER
+                    and message.status == MessageStatus.COMPLETED
+                ):
+                    return message
+
+        raise BusinessException(
+            code=ErrorCode.MESSAGE_NOT_RETRYABLE,
+            message="未找到可用于重试的原始用户消息",
+            status_code=409,
         )
 
     async def _warm_memory(self, conversation_id: UUID) -> None:
