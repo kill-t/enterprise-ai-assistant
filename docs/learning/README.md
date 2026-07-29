@@ -12,3 +12,4 @@
 6. [失败消息原位重试](06-retry-failed-message.md)
 7. [异步 LLM Gateway 基础](07-async-llm-gateway.md)
 8. [用户持久化基础](08-user-persistence-foundation.md)
+9. [密码安全与用户注册](09-password-security-and-registration.md)

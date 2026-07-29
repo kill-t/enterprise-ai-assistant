@@ -6,9 +6,6 @@ from fastapi import FastAPI
 from app.router import register_routers
 from app.core.config import settings
 from app.core.logger import setup_logging
-from app.modules.conversation.api.conversation_router import (
-    router as conversation_router,
-)
 from app.common.exception.handler import register_exception_handlers
 from app.middleware.request_id import RequestIdMiddleware
 from app.infrastructure.database.session import engine
@@ -38,7 +35,6 @@ def create_app() -> FastAPI:
         lifespan=lifespan,
     )
 
-    app.include_router(conversation_router)
     app.add_middleware(RequestIdMiddleware)
 
     # 异常处理器和模块路由必须在应用启动前完成注册。
