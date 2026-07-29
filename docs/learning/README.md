@@ -11,3 +11,4 @@
 5. [中文代码注释与阅读约定](05-code-commenting-conventions.md)
 6. [失败消息原位重试](06-retry-failed-message.md)
 7. [异步 LLM Gateway 基础](07-async-llm-gateway.md)
+8. [用户持久化基础](08-user-persistence-foundation.md)

@@ -9,6 +9,7 @@ from app.infrastructure.database.base import Base
 # 必须导入全部实体，Alembic 才能从 Base.metadata 发现表结构。
 from app.modules.conversation.entity.conversation import ConversationEntity  # noqa: F401, E402
 from app.modules.conversation.entity.message import MessageEntity  # noqa: F401, E402
+from app.modules.identity.entity.user import UserEntity  # noqa: F401, E402
 
 
 # Alembic 配置对象保存 alembic.ini 中的配置；数据库地址以应用配置为准。
