@@ -49,6 +49,22 @@ class AuthSettings(BaseModel):
     access_token_expire_minutes: int = Field(default=30, gt=0, le=1440)
 
 
+class WorkerSettings(BaseModel):
+    """Celery Worker 的 Broker、队列和任务超时配置。"""
+
+    broker_url: str = "redis://localhost:6379/1"
+    default_queue: str = "conversation-summary"
+    task_soft_time_limit_seconds: int = Field(default=270, gt=0)
+    task_time_limit_seconds: int = Field(default=300, gt=0)
+
+    @model_validator(mode="after")
+    def validate_time_limits(self) -> "WorkerSettings":
+        """保证软超时早于硬超时，使任务有机会保存失败状态。"""
+        if self.task_soft_time_limit_seconds >= self.task_time_limit_seconds:
+            raise ValueError("Worker 软超时必须小于硬超时")
+        return self
+
+
 class Settings(BaseSettings):
     """聚合应用运行所需的环境变量配置。"""
 
@@ -64,6 +80,7 @@ class Settings(BaseSettings):
     database: DatabaseSettings
     redis: RedisSettings
     auth: AuthSettings = AuthSettings()
+    worker: WorkerSettings = WorkerSettings()
 
     default_provider: str = "deepseek"
     deepseek: ProviderSettings

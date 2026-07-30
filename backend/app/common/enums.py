@@ -16,3 +16,12 @@ class MessageStatus(str, Enum):
     PENDING = "pending"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class SummaryJobStatus(str, Enum):
+    """会话摘要后台任务的持久化生命周期状态。"""
+
+    PENDING = "pending"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
