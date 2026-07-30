@@ -51,13 +51,14 @@ class ContextManager:
         system_prompt: str,
         user_message: str,
         model_name: str,
+        summary_message: ChatMessage | None = None,
     ) -> list[ChatMessage]:
-        """保留必选消息，并在剩余预算内选择最新的完整问答轮次。"""
+        """保留系统词、摘要和当前问题，再选择最新的完整问答轮次。"""
         counter = self.token_counter_factory(model_name)
-        required_messages = [
-            ChatMessage(role=ChatRole.SYSTEM, content=system_prompt),
-            ChatMessage(role=ChatRole.USER, content=user_message),
-        ]
+        required_messages = [ChatMessage(role=ChatRole.SYSTEM, content=system_prompt)]
+        if summary_message is not None:
+            required_messages.append(summary_message)
+        required_messages.append(ChatMessage(role=ChatRole.USER, content=user_message))
         required_tokens = counter.count_messages(required_messages)
         if required_tokens > self.available_input_tokens:
             raise ContextBudgetExceededError(

@@ -20,9 +20,15 @@ from app.infrastructure.llm.schemas import ChatMessage, ChatRequest
 from app.infrastructure.memory.memory_manager import MemoryManager
 from app.infrastructure.memory.schemas import MemoryMessage
 from app.modules.conversation.entity.conversation import ConversationEntity
+from app.modules.conversation.entity.conversation_summary import (
+    ConversationSummaryEntity,
+)
 from app.modules.conversation.entity.message import MessageEntity
 from app.modules.conversation.repository.conversation_repository import (
     ConversationRepository,
+)
+from app.modules.conversation.repository.conversation_summary_repository import (
+    ConversationSummaryRepository,
 )
 from app.modules.conversation.repository.message_repository import MessageRepository
 from app.modules.conversation.schema.conversation_schema import (
@@ -45,6 +51,7 @@ class ConversationService:
         self.db = db
         self.repository = ConversationRepository(db)
         self.message_repository = MessageRepository(db)
+        self.summary_repository = ConversationSummaryRepository(db)
         self.memory_manager = memory_manager
         self.provider = ProviderFactory.create()
         self.prompt_builder = PromptBuilder()
@@ -135,11 +142,13 @@ class ConversationService:
         app_logger.info("收到用户消息 conversation_id=%s", conversation_id)
         conversation = await self._get_owned_conversation(user_id, conversation_id)
 
-        history_messages = await self._get_history(conversation_id)
+        summary = await self.summary_repository.get_by_conversation_id(conversation_id)
+        history_messages = await self._get_history(conversation_id, summary=summary)
         request = self._build_chat_request(
             conversation=conversation,
             history=history_messages,
             user_message=content,
+            summary_content=summary.content if summary is not None else None,
         )
 
         # 用户问题已经被服务端接收，是需要独立持久化的事实记录。
@@ -205,14 +214,17 @@ class ConversationService:
         )
 
         # 原用户消息会作为当前问题传入，因此必须从历史中排除，避免重复出现。
+        summary = await self.summary_repository.get_by_conversation_id(conversation_id)
         history_messages = await self._get_history(
             conversation_id,
             exclude_message_id=original_user_message.id,
+            summary=summary,
         )
         request = self._build_chat_request(
             conversation=conversation,
             history=history_messages,
             user_message=original_user_message.content,
+            summary_content=summary.content if summary is not None else None,
         )
 
         # 复用原记录可保证前端消息 ID 与审计记录稳定，不会制造重复助手消息。
@@ -271,10 +283,16 @@ class ConversationService:
         conversation: ConversationEntity,
         history: list[ChatMessage],
         user_message: str,
+        summary_content: str | None = None,
     ) -> ChatRequest:
         """按模型预算裁剪完整轮次，并构造 Provider 使用的统一请求。"""
         system_prompt = self.prompt_builder.resolve_system_prompt(
             conversation.system_prompt
+        )
+        summary_message = (
+            self.prompt_builder.build_summary_message(summary_content)
+            if summary_content is not None
+            else None
         )
         try:
             selected_history = self.context_manager.build_history(
@@ -282,6 +300,7 @@ class ConversationService:
                 system_prompt=system_prompt,
                 user_message=user_message,
                 model_name=conversation.model_name,
+                summary_message=summary_message,
             )
         except ContextBudgetExceededError as exc:
             raise BusinessException(
@@ -296,6 +315,7 @@ class ConversationService:
             user_message=user_message,
             temperature=conversation.temperature,
             model_name=conversation.model_name,
+            summary_message=summary_message,
         )
 
     async def get_messages(
@@ -379,8 +399,22 @@ class ConversationService:
         self,
         conversation_id: UUID,
         exclude_message_id: UUID | None = None,
-    ):
-        """优先读取 Redis；必要时回退数据库，并可排除正在重试的原问题。"""
+        summary: ConversationSummaryEntity | None = None,
+    ) -> list[ChatMessage]:
+        """有摘要时读取游标后消息；否则维持 Redis 优先的短对话路径。"""
+        if summary is not None:
+            # Redis 只保存最近消息，无法证明摘要游标之后的历史是否完整。
+            app_logger.debug(
+                "使用会话摘要游标读取未覆盖历史 conversation_id=%s version=%s",
+                conversation_id,
+                summary.version,
+            )
+            return await self._get_history_from_database(
+                conversation_id,
+                exclude_message_id=exclude_message_id,
+                summary=summary,
+            )
+
         try:
             memory_messages = await self.memory_manager.get_context(str(conversation_id))
         except Exception:
@@ -414,11 +448,19 @@ class ConversationService:
         self,
         conversation_id: UUID,
         exclude_message_id: UUID | None = None,
-    ):
-        """从数据库读取已完成消息并转换为模型历史。"""
-        entities = await self.message_repository.list_completed_by_conversation(
-            conversation_id
-        )
+        summary: ConversationSummaryEntity | None = None,
+    ) -> list[ChatMessage]:
+        """读取全部或摘要游标后的已完成消息，并转换为模型历史。"""
+        if summary is None:
+            entities = await self.message_repository.list_completed_by_conversation(
+                conversation_id
+            )
+        else:
+            entities = await self.message_repository.list_completed_after_cursor(
+                conversation_id=conversation_id,
+                covered_until_created_at=summary.covered_until_created_at,
+                covered_until_message_id=summary.covered_until_message_id,
+            )
         return self.history_mapper.to_chat_messages(
             [
                 MemoryMessage(

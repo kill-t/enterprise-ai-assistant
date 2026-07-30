@@ -98,6 +98,9 @@ def build_retry_service(
         )
     )
     service.message_repository = message_repository
+    service.summary_repository = SimpleNamespace(
+        get_by_conversation_id=AsyncMock(return_value=None)
+    )
     service.memory_manager = memory_manager
     service.provider = provider
     service.prompt_builder = PromptBuilder()
@@ -128,6 +131,9 @@ def test_model_timeout_persists_failed_assistant_message() -> None:
         )
     )
     service.message_repository = message_repository
+    service.summary_repository = SimpleNamespace(
+        get_by_conversation_id=AsyncMock(return_value=None)
+    )
     service.memory_manager = memory_manager
     service.provider = FailingProvider()
     service.prompt_builder = PromptBuilder()

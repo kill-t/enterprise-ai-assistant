@@ -17,3 +17,4 @@
 11. [会话所有权与完整 CRUD](11-conversation-ownership-and-crud.md)
 12. [Token 预算与完整轮次裁剪](12-token-budget-and-complete-turns.md)
 13. [会话摘要表与覆盖游标](13-conversation-summary-persistence.md)
+14. [摘要与最近完整轮次的上下文构建](14-summary-and-recent-context.md)

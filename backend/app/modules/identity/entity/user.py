@@ -1,15 +1,11 @@
 from datetime import datetime
-from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy import Boolean, DateTime, String, UniqueConstraint, func, true
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database.base import Base
-
-if TYPE_CHECKING:
-    from app.modules.conversation.entity.conversation import ConversationEntity
 
 
 class UserEntity(Base):
@@ -55,8 +51,4 @@ class UserEntity(Base):
         server_default=func.now(),
         onupdate=func.now(),
         nullable=False,
-    )
-
-    conversations: Mapped[list["ConversationEntity"]] = relationship(
-        back_populates="user"
     )

@@ -1,6 +1,7 @@
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.enums import MessageStatus
@@ -40,7 +41,7 @@ class MessageRepository:
         stmt = (
             select(MessageEntity)
             .where(MessageEntity.conversation_id == conversation_id)
-            .order_by(MessageEntity.created_at)
+            .order_by(MessageEntity.created_at, MessageEntity.id)
         )
         return list((await self.db.scalars(stmt)).all())
 
@@ -55,6 +56,36 @@ class MessageRepository:
                 MessageEntity.conversation_id == conversation_id,
                 MessageEntity.status == MessageStatus.COMPLETED,
             )
-            .order_by(MessageEntity.created_at)
+            .order_by(MessageEntity.created_at, MessageEntity.id)
         )
         return list((await self.db.scalars(stmt)).all())
+
+    async def list_completed_after_cursor(
+        self,
+        conversation_id: UUID,
+        covered_until_created_at: datetime,
+        covered_until_message_id: UUID | None,
+    ) -> list[MessageEntity]:
+        """按稳定时间顺序返回摘要游标之后的已完成消息。"""
+        if covered_until_message_id is None:
+            # 游标消息被删除时使用 >=，宁可重复同一时刻消息，也不能静默遗漏。
+            cursor_condition = MessageEntity.created_at >= covered_until_created_at
+        else:
+            cursor_condition = or_(
+                MessageEntity.created_at > covered_until_created_at,
+                and_(
+                    MessageEntity.created_at == covered_until_created_at,
+                    MessageEntity.id > covered_until_message_id,
+                ),
+            )
+
+        statement = (
+            select(MessageEntity)
+            .where(
+                MessageEntity.conversation_id == conversation_id,
+                MessageEntity.status == MessageStatus.COMPLETED,
+                cursor_condition,
+            )
+            .order_by(MessageEntity.created_at, MessageEntity.id)
+        )
+        return list((await self.db.scalars(statement)).all())

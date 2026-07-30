@@ -9,8 +9,6 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.infrastructure.database.base import Base
 
 if TYPE_CHECKING:
-    from app.modules.identity.entity.user import UserEntity
-
     from .message import MessageEntity
 
 
@@ -48,7 +46,6 @@ class ConversationEntity(Base):
         onupdate=func.now(),
     )
 
-    user: Mapped["UserEntity"] = relationship(back_populates="conversations")
     messages: Mapped[list["MessageEntity"]] = relationship(
         back_populates="conversation",
         cascade="all, delete-orphan",
