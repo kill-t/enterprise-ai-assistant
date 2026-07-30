@@ -35,21 +35,26 @@ class FakeMemory:
         """返回当前测试列表中的全部消息。"""
         return self.messages
 
+    async def delete_messages(self, conversation_id: str) -> None:
+        """清空测试列表，模拟删除 Redis 会话键。"""
+        self.messages.clear()
+
 
 class FakeConversationService:
     """记录路由调用参数的会话服务替身。"""
 
     def __init__(self) -> None:
         """初始化尚未收到调用的状态。"""
-        self.received: tuple[object, str] | None = None
+        self.received: tuple[object, object, str] | None = None
 
     async def send_message(
         self,
+        user_id: object,
         conversation_id: object,
         content: str,
     ) -> MessageResponse:
         """记录输入并返回固定助手消息，隔离真实业务实现。"""
-        self.received = (conversation_id, content)
+        self.received = (user_id, conversation_id, content)
         return MessageResponse(
             id=uuid4(),
             role="assistant",
@@ -81,6 +86,17 @@ def test_memory_manager_round_trips_messages() -> None:
     asyncio.run(scenario())
 
 
+def test_memory_manager_deletes_conversation_context() -> None:
+    """MemoryManager 应通过统一接口删除指定会话的全部短期消息。"""
+    memory = FakeMemory()
+    memory.messages.append(MemoryMessage(role="user", content="待删除"))
+    manager = MemoryManager(short_term_memory=memory)
+
+    asyncio.run(manager.delete_context("conversation-1"))
+
+    assert memory.messages == []
+
+
 def test_conversation_service_dependency_injects_memory_manager() -> None:
     """依赖工厂必须把数据库会话和记忆管理器交给会话服务。"""
     db = Mock()
@@ -97,14 +113,20 @@ def test_send_message_router_is_async_and_awaits_service() -> None:
     assert inspect.iscoroutinefunction(send_message)
     service = FakeConversationService()
     conversation_id = uuid4()
+    current_user = type("CurrentUser", (), {"id": uuid4()})()
 
     response = asyncio.run(
         send_message(
             conversation_id=conversation_id,
             request=MessageCreate(content="帮我总结会议资料"),
             service=service,
+            current_user=current_user,
         )
     )
 
     assert response.content == "已收到"
-    assert service.received == (conversation_id, "帮我总结会议资料")
+    assert service.received == (
+        current_user.id,
+        conversation_id,
+        "帮我总结会议资料",
+    )

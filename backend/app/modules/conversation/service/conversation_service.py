@@ -16,6 +16,7 @@ from app.infrastructure.llm.provider_factory import ProviderFactory
 from app.infrastructure.llm.schemas import ChatRequest
 from app.infrastructure.memory.memory_manager import MemoryManager
 from app.infrastructure.memory.schemas import MemoryMessage
+from app.modules.conversation.entity.conversation import ConversationEntity
 from app.modules.conversation.entity.message import MessageEntity
 from app.modules.conversation.repository.conversation_repository import (
     ConversationRepository,
@@ -24,6 +25,7 @@ from app.modules.conversation.repository.message_repository import MessageReposi
 from app.modules.conversation.schema.conversation_schema import (
     ConversationCreate,
     ConversationResponse,
+    ConversationUpdate,
 )
 from app.modules.conversation.schema.message_schema import MessageResponse
 
@@ -61,22 +63,69 @@ class ConversationService:
         app_logger.info("已创建会话 user_id=%s conversation_id=%s", user_id, entity.id)
         return ConversationResponse.model_validate(entity)
 
+    async def list_conversations(
+        self,
+        user_id: UUID,
+        include_archived: bool = False,
+    ) -> list[ConversationResponse]:
+        """返回当前用户的会话列表，并默认隐藏已归档会话。"""
+        entities = await self.repository.list_by_user(
+            user_id=user_id,
+            include_archived=include_archived,
+        )
+        return [ConversationResponse.model_validate(entity) for entity in entities]
+
+    async def get(
+        self,
+        user_id: UUID,
+        conversation_id: UUID,
+    ) -> ConversationResponse:
+        """返回属于当前用户的指定会话。"""
+        entity = await self._get_owned_conversation(user_id, conversation_id)
+        return ConversationResponse.model_validate(entity)
+
+    async def update(
+        self,
+        user_id: UUID,
+        conversation_id: UUID,
+        changes: ConversationUpdate,
+    ) -> ConversationResponse:
+        """修改当前用户会话的标题或归档状态并提交事务。"""
+        entity = await self._get_owned_conversation(user_id, conversation_id)
+        update_fields = changes.model_dump(exclude_unset=True)
+        for field_name, value in update_fields.items():
+            setattr(entity, field_name, value)
+        await self.repository.update(entity)
+        await self._commit()
+        app_logger.info(
+            "会话已更新 user_id=%s conversation_id=%s fields=%s",
+            user_id,
+            conversation_id,
+            sorted(update_fields),
+        )
+        return ConversationResponse.model_validate(entity)
+
+    async def delete(self, user_id: UUID, conversation_id: UUID) -> None:
+        """删除当前用户的会话及消息，并尽力清理 Redis 短期记忆。"""
+        entity = await self._get_owned_conversation(user_id, conversation_id)
+        await self.repository.delete(entity)
+        await self._commit()
+        await self._delete_memory(conversation_id)
+        app_logger.info(
+            "会话已删除 user_id=%s conversation_id=%s",
+            user_id,
+            conversation_id,
+        )
+
     async def send_message(
         self,
+        user_id: UUID,
         conversation_id: UUID,
         content: str,
     ) -> MessageResponse:
         """保存用户问题、调用模型并持久化助手消息状态。"""
         app_logger.info("收到用户消息 conversation_id=%s", conversation_id)
-        conversation = await self.repository.get_by_id(conversation_id)
-
-        if conversation is None:
-            app_logger.warning("会话不存在 conversation_id=%s", conversation_id)
-            raise BusinessException(
-                code=ErrorCode.CONVERSATION_NOT_FOUND,
-                message="会话不存在",
-                status_code=404,
-            )
+        conversation = await self._get_owned_conversation(user_id, conversation_id)
 
         history_messages = await self._get_history(conversation_id)
         request = self.prompt_builder.build(
@@ -118,17 +167,12 @@ class ConversationService:
 
     async def retry_failed_message(
         self,
+        user_id: UUID,
         conversation_id: UUID,
         message_id: UUID,
     ) -> MessageResponse:
         """将失败助手消息恢复为 pending，并使用原问题重新调用模型。"""
-        conversation = await self.repository.get_by_id(conversation_id)
-        if conversation is None:
-            raise BusinessException(
-                code=ErrorCode.CONVERSATION_NOT_FOUND,
-                message="会话不存在",
-                status_code=404,
-            )
+        conversation = await self._get_owned_conversation(user_id, conversation_id)
 
         assistant_message = await self.message_repository.get_by_id(message_id)
         if assistant_message is None or assistant_message.conversation_id != conversation_id:
@@ -218,11 +262,36 @@ class ConversationService:
 
     async def get_messages(
         self,
+        user_id: UUID,
         conversation_id: UUID,
     ) -> list[MessageResponse]:
         """返回全部消息，使前端能够展示 pending 和 failed 状态。"""
+        await self._get_owned_conversation(user_id, conversation_id)
         entities = await self.message_repository.list_by_conversation(conversation_id)
         return [MessageResponse.model_validate(entity) for entity in entities]
+
+    async def _get_owned_conversation(
+        self,
+        user_id: UUID,
+        conversation_id: UUID,
+    ) -> ConversationEntity:
+        """执行统一所有权查询，并把不存在和跨用户访问统一为 404。"""
+        conversation = await self.repository.get_by_id_for_user(
+            conversation_id=conversation_id,
+            user_id=user_id,
+        )
+        if conversation is None:
+            app_logger.warning(
+                "会话不存在或不属于当前用户 user_id=%s conversation_id=%s",
+                user_id,
+                conversation_id,
+            )
+            raise BusinessException(
+                code=ErrorCode.CONVERSATION_NOT_FOUND,
+                message="会话不存在",
+                status_code=404,
+            )
+        return conversation
 
     async def _commit(self) -> None:
         """提交当前事务；提交失败时回滚 Session 并保留原异常。"""
@@ -381,6 +450,17 @@ class ConversationService:
         except Exception:
             app_logger.warning(
                 "Redis 记忆写入失败，数据库记录仍然有效 conversation_id=%s",
+                conversation_id,
+                exc_info=True,
+            )
+
+    async def _delete_memory(self, conversation_id: UUID) -> None:
+        """尽力清理已删除会话的 Redis 缓存，缓存故障不回滚数据库删除。"""
+        try:
+            await self.memory_manager.delete_context(str(conversation_id))
+        except Exception:
+            app_logger.warning(
+                "Redis 记忆删除失败，数据库会话已删除 conversation_id=%s",
                 conversation_id,
                 exc_info=True,
             )

@@ -66,3 +66,7 @@ class RedisMemory(BaseMemory):
         )
 
         return [MemoryMessage.model_validate_json(item) for item in values]
+
+    async def delete_messages(self, conversation_id: str) -> None:
+        """删除会话对应的 Redis List 及其过期时间。"""
+        await self.redis.delete(self._key(conversation_id))

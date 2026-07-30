@@ -22,3 +22,8 @@ class BaseMemory(ABC):
     ) -> list[MemoryMessage]:
         """读取指定会话当前保留的短期记忆消息。"""
         pass
+
+    @abstractmethod
+    async def delete_messages(self, conversation_id: str) -> None:
+        """删除指定会话的全部短期记忆。"""
+        pass

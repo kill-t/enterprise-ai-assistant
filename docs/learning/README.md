@@ -14,3 +14,4 @@
 8. [用户持久化基础](08-user-persistence-foundation.md)
 9. [密码安全与用户注册](09-password-security-and-registration.md)
 10. [登录、JWT 与当前用户](10-login-jwt-and-current-user.md)
+11. [会话所有权与完整 CRUD](11-conversation-ownership-and-crud.md)

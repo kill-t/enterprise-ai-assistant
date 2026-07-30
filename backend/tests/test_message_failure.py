@@ -89,7 +89,7 @@ def build_retry_service(
     service = object.__new__(ConversationService)
     service.db = db
     service.repository = SimpleNamespace(
-        get_by_id=AsyncMock(
+        get_by_id_for_user=AsyncMock(
             return_value=SimpleNamespace(
                 system_prompt=None,
                 temperature=0.7,
@@ -119,7 +119,7 @@ def test_model_timeout_persists_failed_assistant_message() -> None:
     service = object.__new__(ConversationService)
     service.db = db
     service.repository = SimpleNamespace(
-        get_by_id=AsyncMock(
+        get_by_id_for_user=AsyncMock(
             return_value=SimpleNamespace(
                 system_prompt=None,
                 temperature=0.7,
@@ -137,7 +137,11 @@ def test_model_timeout_persists_failed_assistant_message() -> None:
     async def scenario() -> BusinessException:
         """捕获服务转换后的业务异常，供同步测试断言。"""
         try:
-            await service.send_message(conversation_id, "整理会议待办")
+            await service.send_message(
+                user_id=uuid4(),
+                conversation_id=conversation_id,
+                content="整理会议待办",
+            )
         except BusinessException as exc:
             return exc
         raise AssertionError("模型超时必须转换为业务异常")
@@ -202,7 +206,11 @@ def test_retry_reuses_failed_assistant_message_and_excludes_original_question() 
     )
 
     response = asyncio.run(
-        service.retry_failed_message(conversation_id, failed_message.id)
+        service.retry_failed_message(
+            user_id=uuid4(),
+            conversation_id=conversation_id,
+            message_id=failed_message.id,
+        )
     )
 
     assert response.id == failed_message.id
@@ -241,7 +249,11 @@ def test_retry_failure_marks_the_same_message_as_failed_again() -> None:
     async def scenario() -> BusinessException:
         """捕获重试流程抛出的业务异常，保留后续状态断言。"""
         try:
-            await service.retry_failed_message(conversation_id, failed_message.id)
+            await service.retry_failed_message(
+                user_id=uuid4(),
+                conversation_id=conversation_id,
+                message_id=failed_message.id,
+            )
         except BusinessException as exc:
             return exc
         raise AssertionError("重试超时必须转换为业务异常")
@@ -277,7 +289,11 @@ def test_only_failed_assistant_message_can_be_retried() -> None:
     async def scenario() -> BusinessException:
         """捕获状态冲突异常，验证重复点击不会进入模型调用。"""
         try:
-            await service.retry_failed_message(conversation_id, pending_message.id)
+            await service.retry_failed_message(
+                user_id=uuid4(),
+                conversation_id=conversation_id,
+                message_id=pending_message.id,
+            )
         except BusinessException as exc:
             return exc
         raise AssertionError("pending 消息必须拒绝重试")
@@ -311,7 +327,11 @@ def test_retry_rejects_message_from_another_conversation() -> None:
     async def scenario() -> BusinessException:
         """捕获跨会话访问时的未找到异常。"""
         try:
-            await service.retry_failed_message(conversation_id, foreign_message.id)
+            await service.retry_failed_message(
+                user_id=uuid4(),
+                conversation_id=conversation_id,
+                message_id=foreign_message.id,
+            )
         except BusinessException as exc:
             return exc
         raise AssertionError("跨会话消息必须拒绝重试")

@@ -11,7 +11,7 @@ Memory 类已经存在，但消息接口无法正确使用它：
 ## 调用链
 
 ```text
-POST /conversations/{conversation_id}/messages
+POST /api/v1/conversations/{conversation_id}/messages
     ↓
 async send_message Router
     ↓

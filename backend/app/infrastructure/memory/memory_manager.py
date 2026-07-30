@@ -31,3 +31,7 @@ class MemoryManager:
         """返回可用于构建模型上下文的短期消息。"""
 
         return await self.short_term_memory.get_messages(conversation_id)
+
+    async def delete_context(self, conversation_id: str) -> None:
+        """删除指定会话的全部短期缓存。"""
+        await self.short_term_memory.delete_messages(conversation_id)
