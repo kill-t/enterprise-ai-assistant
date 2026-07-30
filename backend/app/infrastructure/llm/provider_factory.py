@@ -1,4 +1,4 @@
-from app.core.config import settings
+from app.core.config import ModelContextSettings, settings
 from app.infrastructure.llm.base import BaseChatProvider
 from app.infrastructure.llm.providers.mock_provider import MockProvider
 from app.infrastructure.llm.providers.openai_provider import OpenAIProvider
@@ -23,4 +23,16 @@ class ProviderFactory:
         if provider == "openai":
             return OpenAIProvider()
 
+        raise ValueError(f"Unsupported provider: {provider}")
+
+    @staticmethod
+    def get_context_settings() -> ModelContextSettings:
+        """返回默认 Provider 的上下文预算；Mock 使用稳定的本地默认值。"""
+        provider = settings.default_provider.lower()
+        if provider == "deepseek":
+            return settings.deepseek
+        if provider == "openai":
+            return settings.openai
+        if provider == "mock":
+            return ModelContextSettings()
         raise ValueError(f"Unsupported provider: {provider}")

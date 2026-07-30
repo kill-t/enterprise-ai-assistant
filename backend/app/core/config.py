@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -18,7 +18,22 @@ class RedisSettings(BaseModel):
     url: str
 
 
-class ProviderSettings(BaseModel):
+class ModelContextSettings(BaseModel):
+    """描述模型上下文窗口，以及输入预算必须预留的空间。"""
+
+    context_window_tokens: int = Field(default=8192, gt=0)
+    max_output_tokens: int = Field(default=1024, gt=0)
+    token_safety_margin: int = Field(default=256, ge=0)
+
+    @model_validator(mode="after")
+    def validate_token_budget(self) -> "ModelContextSettings":
+        """保证系统始终拥有大于零的输入预算。"""
+        if self.max_output_tokens + self.token_safety_margin >= self.context_window_tokens:
+            raise ValueError("输出预留与安全余量必须小于模型上下文窗口")
+        return self
+
+
+class ProviderSettings(ModelContextSettings):
     """单个大模型 Provider 的访问配置。"""
 
     api_key: str

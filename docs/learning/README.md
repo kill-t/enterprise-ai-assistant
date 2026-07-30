@@ -15,3 +15,4 @@
 9. [密码安全与用户注册](09-password-security-and-registration.md)
 10. [登录、JWT 与当前用户](10-login-jwt-and-current-user.md)
 11. [会话所有权与完整 CRUD](11-conversation-ownership-and-crud.md)
+12. [Token 预算与完整轮次裁剪](12-token-budget-and-complete-turns.md)

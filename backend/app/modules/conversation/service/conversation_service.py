@@ -9,11 +9,14 @@ from app.common.enums import MessageRole, MessageStatus
 from app.common.exception.business_exception import BusinessException
 from app.common.exception.error_code import ErrorCode
 from app.core.loggers import app_logger
-from app.infrastructure.llm.context_manager import ContextManager
+from app.infrastructure.llm.context_manager import (
+    ContextBudgetExceededError,
+    ContextManager,
+)
 from app.infrastructure.llm.history_mapper import HistoryMapper
 from app.infrastructure.llm.prompt_builder import PromptBuilder
 from app.infrastructure.llm.provider_factory import ProviderFactory
-from app.infrastructure.llm.schemas import ChatRequest
+from app.infrastructure.llm.schemas import ChatMessage, ChatRequest
 from app.infrastructure.memory.memory_manager import MemoryManager
 from app.infrastructure.memory.schemas import MemoryMessage
 from app.modules.conversation.entity.conversation import ConversationEntity
@@ -45,7 +48,12 @@ class ConversationService:
         self.memory_manager = memory_manager
         self.provider = ProviderFactory.create()
         self.prompt_builder = PromptBuilder()
-        self.context_manager = ContextManager()
+        context_settings = ProviderFactory.get_context_settings()
+        self.context_manager = ContextManager(
+            context_window_tokens=context_settings.context_window_tokens,
+            max_output_tokens=context_settings.max_output_tokens,
+            token_safety_margin=context_settings.token_safety_margin,
+        )
         self.history_mapper = HistoryMapper()
 
     async def create(
@@ -128,11 +136,10 @@ class ConversationService:
         conversation = await self._get_owned_conversation(user_id, conversation_id)
 
         history_messages = await self._get_history(conversation_id)
-        request = self.prompt_builder.build(
-            system_prompt=conversation.system_prompt,
-            history=self.context_manager.build_history(history_messages),
+        request = self._build_chat_request(
+            conversation=conversation,
+            history=history_messages,
             user_message=content,
-            temperature=conversation.temperature,
         )
 
         # 用户问题已经被服务端接收，是需要独立持久化的事实记录。
@@ -202,11 +209,10 @@ class ConversationService:
             conversation_id,
             exclude_message_id=original_user_message.id,
         )
-        request = self.prompt_builder.build(
-            system_prompt=conversation.system_prompt,
-            history=self.context_manager.build_history(history_messages),
+        request = self._build_chat_request(
+            conversation=conversation,
+            history=history_messages,
             user_message=original_user_message.content,
-            temperature=conversation.temperature,
         )
 
         # 复用原记录可保证前端消息 ID 与审计记录稳定，不会制造重复助手消息。
@@ -259,6 +265,38 @@ class ConversationService:
 
         app_logger.info("助手消息已保存 conversation_id=%s", conversation_id)
         return MessageResponse.model_validate(assistant_message)
+
+    def _build_chat_request(
+        self,
+        conversation: ConversationEntity,
+        history: list[ChatMessage],
+        user_message: str,
+    ) -> ChatRequest:
+        """按模型预算裁剪完整轮次，并构造 Provider 使用的统一请求。"""
+        system_prompt = self.prompt_builder.resolve_system_prompt(
+            conversation.system_prompt
+        )
+        try:
+            selected_history = self.context_manager.build_history(
+                history=history,
+                system_prompt=system_prompt,
+                user_message=user_message,
+                model_name=conversation.model_name,
+            )
+        except ContextBudgetExceededError as exc:
+            raise BusinessException(
+                code=ErrorCode.CONTEXT_WINDOW_EXCEEDED,
+                message="当前问题过长，请缩短内容后重试",
+                status_code=422,
+            ) from exc
+
+        return self.prompt_builder.build(
+            system_prompt=system_prompt,
+            history=selected_history,
+            user_message=user_message,
+            temperature=conversation.temperature,
+            model_name=conversation.model_name,
+        )
 
     async def get_messages(
         self,
