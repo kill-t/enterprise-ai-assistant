@@ -19,3 +19,4 @@
 13. [会话摘要表与覆盖游标](13-conversation-summary-persistence.md)
 14. [摘要与最近完整轮次的上下文构建](14-summary-and-recent-context.md)
 15. [持久化摘要任务与 Celery 基础](15-persistent-summary-job-and-celery.md)
+16. [摘要任务触发与提交后可靠投递](16-summary-job-scheduling-and-dispatch.md)

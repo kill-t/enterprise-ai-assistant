@@ -65,6 +65,13 @@ class WorkerSettings(BaseModel):
         return self
 
 
+class ConversationMemorySettings(BaseModel):
+    """长会话摘要触发和近期历史保留的初始参数。"""
+
+    summary_trigger_tokens: int = Field(default=3000, gt=0)
+    recent_history_budget_tokens: int = Field(default=2000, gt=0)
+
+
 class Settings(BaseSettings):
     """聚合应用运行所需的环境变量配置。"""
 
@@ -81,6 +88,7 @@ class Settings(BaseSettings):
     redis: RedisSettings
     auth: AuthSettings = AuthSettings()
     worker: WorkerSettings = WorkerSettings()
+    conversation_memory: ConversationMemorySettings = ConversationMemorySettings()
 
     default_provider: str = "deepseek"
     deepseek: ProviderSettings

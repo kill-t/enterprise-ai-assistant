@@ -19,6 +19,9 @@ from app.infrastructure.llm.provider_factory import ProviderFactory
 from app.infrastructure.llm.schemas import ChatMessage, ChatRequest
 from app.infrastructure.memory.memory_manager import MemoryManager
 from app.infrastructure.memory.schemas import MemoryMessage
+from app.infrastructure.task_queue.summary_job_dispatcher import (
+    CelerySummaryJobDispatcher,
+)
 from app.modules.conversation.entity.conversation import ConversationEntity
 from app.modules.conversation.entity.conversation_summary import (
     ConversationSummaryEntity,
@@ -30,6 +33,9 @@ from app.modules.conversation.repository.conversation_repository import (
 from app.modules.conversation.repository.conversation_summary_repository import (
     ConversationSummaryRepository,
 )
+from app.modules.conversation.repository.conversation_summary_job_repository import (
+    ConversationSummaryJobRepository,
+)
 from app.modules.conversation.repository.message_repository import MessageRepository
 from app.modules.conversation.schema.conversation_schema import (
     ConversationCreate,
@@ -37,6 +43,10 @@ from app.modules.conversation.schema.conversation_schema import (
     ConversationUpdate,
 )
 from app.modules.conversation.schema.message_schema import MessageResponse
+from app.modules.conversation.service.conversation_summary_job_service import (
+    ConversationSummaryJobService,
+)
+from app.core.config import settings
 
 
 class ConversationService:
@@ -52,6 +62,7 @@ class ConversationService:
         self.repository = ConversationRepository(db)
         self.message_repository = MessageRepository(db)
         self.summary_repository = ConversationSummaryRepository(db)
+        self.summary_job_repository = ConversationSummaryJobRepository(db)
         self.memory_manager = memory_manager
         self.provider = ProviderFactory.create()
         self.prompt_builder = PromptBuilder()
@@ -62,6 +73,16 @@ class ConversationService:
             token_safety_margin=context_settings.token_safety_margin,
         )
         self.history_mapper = HistoryMapper()
+        self.summary_job_service = ConversationSummaryJobService(
+            db=db,
+            message_repository=self.message_repository,
+            summary_repository=self.summary_repository,
+            job_repository=self.summary_job_repository,
+            dispatcher=CelerySummaryJobDispatcher(),
+            summary_trigger_tokens=(
+                settings.conversation_memory.summary_trigger_tokens
+            ),
+        )
 
     async def create(
         self,
@@ -176,6 +197,7 @@ class ConversationService:
         await self._commit()
 
         return await self._generate_assistant_response(
+            conversation=conversation,
             conversation_id=conversation_id,
             request=request,
             assistant_message=assistant_message,
@@ -245,6 +267,7 @@ class ConversationService:
             message_id,
         )
         return await self._generate_assistant_response(
+            conversation=conversation,
             conversation_id=conversation_id,
             request=request,
             assistant_message=assistant_message,
@@ -252,6 +275,7 @@ class ConversationService:
 
     async def _generate_assistant_response(
         self,
+        conversation: ConversationEntity,
         conversation_id: UUID,
         request: ChatRequest,
         assistant_message: MessageEntity,
@@ -274,9 +298,26 @@ class ConversationService:
         await self.message_repository.update(assistant_message)
         await self._commit()
         await self._save_to_memory(conversation_id, assistant_message)
+        await self._schedule_summary_safely(conversation)
 
         app_logger.info("助手消息已保存 conversation_id=%s", conversation_id)
         return MessageResponse.model_validate(assistant_message)
+
+    async def _schedule_summary_safely(
+        self,
+        conversation: ConversationEntity,
+    ) -> None:
+        """尽力创建摘要任务；调度故障不得覆盖已经提交的助手回复。"""
+        try:
+            await self.summary_job_service.maybe_schedule(conversation)
+        except Exception:
+            # 任务数据库操作失败后先恢复 Session，后续请求仍可正常使用。
+            await self.db.rollback()
+            app_logger.warning(
+                "摘要任务创建失败，不影响本次聊天 conversation_id=%s",
+                conversation.id,
+                exc_info=True,
+            )
 
     def _build_chat_request(
         self,

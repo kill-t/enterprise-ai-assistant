@@ -101,6 +101,7 @@ def build_retry_service(
     service.summary_repository = SimpleNamespace(
         get_by_conversation_id=AsyncMock(return_value=None)
     )
+    service.summary_job_service = SimpleNamespace(maybe_schedule=AsyncMock())
     service.memory_manager = memory_manager
     service.provider = provider
     service.prompt_builder = PromptBuilder()
@@ -134,6 +135,7 @@ def test_model_timeout_persists_failed_assistant_message() -> None:
     service.summary_repository = SimpleNamespace(
         get_by_conversation_id=AsyncMock(return_value=None)
     )
+    service.summary_job_service = SimpleNamespace(maybe_schedule=AsyncMock())
     service.memory_manager = memory_manager
     service.provider = FailingProvider()
     service.prompt_builder = PromptBuilder()
@@ -229,6 +231,7 @@ def test_retry_reuses_failed_assistant_message_and_excludes_original_question() 
     assert [message.content for message in provider.requests[0].messages].count(
         "整理会议待办"
     ) == 1
+    service.summary_job_service.maybe_schedule.assert_awaited_once()
 
 
 def test_retry_failure_marks_the_same_message_as_failed_again() -> None:
@@ -272,6 +275,7 @@ def test_retry_failure_marks_the_same_message_as_failed_again() -> None:
     assert failed_message.error_code == ErrorCode.MODEL_TIMEOUT.value
     assert failed_message.content == ""
     assert memory_manager.saved_messages == []
+    service.summary_job_service.maybe_schedule.assert_not_awaited()
 
 
 def test_only_failed_assistant_message_can_be_retried() -> None:
