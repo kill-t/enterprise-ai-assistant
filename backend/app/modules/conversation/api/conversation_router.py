@@ -1,8 +1,15 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Query, Response, status
+from fastapi.responses import StreamingResponse
 
 from app.common.dependencies import ConversationServiceDep
+from app.common.exception.business_exception import BusinessException
+from app.common.exception.error_code import ErrorCode
+from app.modules.conversation.api.sse import (
+    close_message_stream,
+    iter_sse_frames,
+)
 from app.modules.conversation.schema.conversation_schema import (
     ConversationCreate,
     ConversationResponse,
@@ -11,6 +18,7 @@ from app.modules.conversation.schema.conversation_schema import (
 from app.modules.conversation.schema.message_schema import (
     MessageCreate,
     MessageResponse,
+    MessageStreamStartedEvent,
 )
 from app.modules.identity.dependencies import CurrentUserDep
 
@@ -21,7 +29,9 @@ router = APIRouter(
 )
 
 
-@router.post("", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED)
+@router.post(
+    "", response_model=ConversationResponse, status_code=status.HTTP_201_CREATED
+)
 async def create_conversation(
     request: ConversationCreate,
     service: ConversationServiceDep,
@@ -101,6 +111,66 @@ async def send_message(
         user_id=current_user.id,
         conversation_id=conversation_id,
         content=request.content,
+    )
+
+
+@router.post(
+    "/{conversation_id}/messages/stream",
+    response_class=StreamingResponse,
+    responses={
+        200: {
+            "description": "按 started、delta、completed 或 error 顺序返回消息流",
+            "content": {
+                "text/event-stream": {
+                    "schema": {"type": "string"},
+                }
+            },
+        }
+    },
+)
+async def stream_message(
+    conversation_id: UUID,
+    request: MessageCreate,
+    service: ConversationServiceDep,
+    current_user: CurrentUserDep,
+) -> StreamingResponse:
+    """预取持久化成功的 started 后，再建立 SSE 流式响应。"""
+    message_stream = service.stream_message(
+        user_id=current_user.id,
+        conversation_id=conversation_id,
+        content=request.content,
+    )
+    try:
+        # 预取发生在响应头发送前，让所有权、预算和数据库错误仍能返回正确 HTTP 状态。
+        first_event = await anext(message_stream)
+    except StopAsyncIteration as exc:
+        await close_message_stream(message_stream)
+        raise BusinessException(
+            code=ErrorCode.INTERNAL_ERROR,
+            message="消息流启动失败",
+            status_code=500,
+        ) from exc
+    except BaseException:
+        # 同时覆盖业务异常和任务取消；清理后原样抛出，交给上层决定 HTTP 结果。
+        await close_message_stream(message_stream)
+        raise
+
+    if not isinstance(first_event, MessageStreamStartedEvent):
+        await close_message_stream(message_stream)
+        raise BusinessException(
+            code=ErrorCode.INTERNAL_ERROR,
+            message="消息流启动失败",
+            status_code=500,
+        )
+
+    return StreamingResponse(
+        iter_sse_frames(first_event, message_stream),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            # 禁止 Nginx 代理缓冲，否则前端可能在结束时才一次收到全部片段。
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

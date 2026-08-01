@@ -27,3 +27,4 @@
 21. [摘要任务周期恢复与投递租约](21-summary-recovery-and-dispatch-lease.md)
 22. [模型流式输出的内部契约](22-internal-llm-stream-contract.md)
 23. [Service 流式消息状态与事务边界](23-service-stream-message-state.md)
+24. [FastAPI SSE 流式协议层](24-fastapi-sse-transport.md)

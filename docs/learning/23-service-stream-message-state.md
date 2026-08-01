@@ -17,7 +17,7 @@ async for event in service.stream_message(...):
     ...
 ```
 
-它仍然是 Python 内部异步生成器，不是 HTTP SSE。
+本模块先完成 Python 内部异步生成器；它现在已经由第 24 模块包装成 HTTP SSE，Service 自身仍然不依赖 HTTP。
 
 ## 2. Service 为什么不能直接转发 Provider 事件
 
@@ -300,14 +300,12 @@ await provider.chat(request)
 
 ## 15. 当前还没有实现什么
 
-- FastAPI SSE 路由。
-- SSE 的 `event:` 和 `data:` 文本帧编码。
 - 浏览器断线与用户主动取消后的消息终态。
 - 前端逐段渲染和按钮禁用。
 - 跨进程恢复普通聊天生成。
 - `llm_runs` 模型调用审计表。
 
-当前 `stream_message` 只能由 Python 内部代码和测试调用。
+FastAPI SSE 路由和文本帧编码已在[第 24 模块](24-fastapi-sse-transport.md)完成。
 
 ## 16. 测试保护什么
 
