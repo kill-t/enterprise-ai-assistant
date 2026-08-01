@@ -20,3 +20,4 @@
 14. [摘要与最近完整轮次的上下文构建](14-summary-and-recent-context.md)
 15. [持久化摘要任务与 Celery 基础](15-persistent-summary-job-and-celery.md)
 16. [摘要任务触发与提交后可靠投递](16-summary-job-scheduling-and-dispatch.md)
+17. [摘要 Worker 原子领取与重复执行保护](17-summary-worker-atomic-claim.md)

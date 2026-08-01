@@ -1,6 +1,7 @@
+from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.enums import SummaryJobStatus
@@ -57,3 +58,81 @@ class ConversationSummaryJobRepository:
         await self.db.flush()
         await self.db.refresh(job)
         return job
+
+    async def claim_pending(
+        self,
+        job_id: UUID,
+        started_at: datetime,
+    ) -> ConversationSummaryJobEntity | None:
+        """用一条条件 UPDATE 原子领取待处理任务，避免多个 Worker 重复执行。"""
+        statement = (
+            update(ConversationSummaryJobEntity)
+            .where(
+                ConversationSummaryJobEntity.id == job_id,
+                ConversationSummaryJobEntity.status == SummaryJobStatus.PENDING,
+                (
+                    ConversationSummaryJobEntity.attempts
+                    < ConversationSummaryJobEntity.max_attempts
+                ),
+            )
+            .values(
+                status=SummaryJobStatus.RUNNING,
+                attempts=ConversationSummaryJobEntity.attempts + 1,
+                started_at=started_at,
+                finished_at=None,
+                error_code=None,
+                error_message=None,
+            )
+            .returning(ConversationSummaryJobEntity)
+        )
+        return await self.db.scalar(statement)
+
+    async def mark_succeeded(
+        self,
+        job_id: UUID,
+        expected_attempts: int,
+        finished_at: datetime,
+    ) -> ConversationSummaryJobEntity | None:
+        """仅允许持有相同执行次数的 Worker 把运行中任务标记为成功。"""
+        statement = (
+            update(ConversationSummaryJobEntity)
+            .where(
+                ConversationSummaryJobEntity.id == job_id,
+                ConversationSummaryJobEntity.status == SummaryJobStatus.RUNNING,
+                ConversationSummaryJobEntity.attempts == expected_attempts,
+            )
+            .values(
+                status=SummaryJobStatus.SUCCEEDED,
+                finished_at=finished_at,
+                error_code=None,
+                error_message=None,
+            )
+            .returning(ConversationSummaryJobEntity)
+        )
+        return await self.db.scalar(statement)
+
+    async def mark_failed(
+        self,
+        job_id: UUID,
+        expected_attempts: int,
+        finished_at: datetime,
+        error_code: str,
+        error_message: str,
+    ) -> ConversationSummaryJobEntity | None:
+        """按执行次数记录失败结果，防止迟到 Worker 覆盖较新的执行状态。"""
+        statement = (
+            update(ConversationSummaryJobEntity)
+            .where(
+                ConversationSummaryJobEntity.id == job_id,
+                ConversationSummaryJobEntity.status == SummaryJobStatus.RUNNING,
+                ConversationSummaryJobEntity.attempts == expected_attempts,
+            )
+            .values(
+                status=SummaryJobStatus.FAILED,
+                finished_at=finished_at,
+                error_code=error_code,
+                error_message=error_message,
+            )
+            .returning(ConversationSummaryJobEntity)
+        )
+        return await self.db.scalar(statement)

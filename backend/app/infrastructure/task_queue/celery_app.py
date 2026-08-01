@@ -7,6 +7,7 @@ def create_celery_app() -> Celery:
     """创建只负责消息投递的 Celery 应用，业务状态保存在 PostgreSQL。"""
     app = Celery("enterprise_ai_assistant")
     app.conf.update(
+        imports=("app.modules.conversation.tasks.conversation_summary_task",),
         broker_url=settings.worker.broker_url,
         result_backend=None,
         task_ignore_result=True,
