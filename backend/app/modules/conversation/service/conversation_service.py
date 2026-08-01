@@ -1,4 +1,7 @@
 import asyncio
+from collections.abc import AsyncIterator
+from contextlib import aclosing
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from uuid import UUID
 
@@ -8,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.enums import MessageRole, MessageStatus
 from app.common.exception.business_exception import BusinessException
 from app.common.exception.error_code import ErrorCode
+from app.core.config import settings
 from app.core.loggers import app_logger
 from app.infrastructure.llm.context_manager import (
     ContextBudgetExceededError,
@@ -16,7 +20,14 @@ from app.infrastructure.llm.context_manager import (
 from app.infrastructure.llm.history_mapper import HistoryMapper
 from app.infrastructure.llm.prompt_builder import PromptBuilder
 from app.infrastructure.llm.provider_factory import ProviderFactory
-from app.infrastructure.llm.schemas import ChatMessage, ChatRequest
+from app.infrastructure.llm.schemas import (
+    ChatMessage,
+    ChatRequest,
+    ChatResponse,
+    ChatStreamCompletedEvent,
+    ChatStreamDeltaEvent,
+    ChatStreamErrorEvent,
+)
 from app.infrastructure.memory.memory_manager import MemoryManager
 from app.infrastructure.memory.schemas import MemoryMessage
 from app.infrastructure.task_queue.summary_job_dispatcher import (
@@ -42,11 +53,27 @@ from app.modules.conversation.schema.conversation_schema import (
     ConversationResponse,
     ConversationUpdate,
 )
-from app.modules.conversation.schema.message_schema import MessageResponse
+from app.modules.conversation.schema.message_schema import (
+    MessageResponse,
+    MessageStreamCompletedEvent,
+    MessageStreamDeltaEvent,
+    MessageStreamErrorEvent,
+    MessageStreamEvent,
+    MessageStreamStartedEvent,
+)
 from app.modules.conversation.service.conversation_summary_job_service import (
     ConversationSummaryJobService,
 )
-from app.core.config import settings
+
+
+@dataclass(frozen=True)
+class _MessageGenerationContext:
+    """保存一次消息生成在准备阶段确定的会话、请求和两条消息。"""
+
+    conversation: ConversationEntity
+    request: ChatRequest
+    user_message: MessageEntity
+    assistant_message: MessageEntity
 
 
 class ConversationService:
@@ -169,9 +196,126 @@ class ConversationService:
         content: str,
     ) -> MessageResponse:
         """保存用户问题、调用模型并持久化助手消息状态。"""
+        context = await self._prepare_message_generation(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            content=content,
+        )
+        return await self._generate_assistant_response(
+            conversation=context.conversation,
+            conversation_id=conversation_id,
+            request=context.request,
+            assistant_message=context.assistant_message,
+        )
+
+    async def stream_message(
+        self,
+        user_id: UUID,
+        conversation_id: UUID,
+        content: str,
+    ) -> AsyncIterator[MessageStreamEvent]:
+        """把 Provider 流转换成带消息状态和事务语义的 Service 内部流。"""
+        context = await self._prepare_message_generation(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            content=content,
+        )
+        assistant_message = context.assistant_message
+        yield MessageStreamStartedEvent(
+            user_message=MessageResponse.model_validate(context.user_message),
+            assistant_message=MessageResponse.model_validate(assistant_message),
+        )
+
+        content_parts: list[str] = []
+        terminal_event: ChatStreamCompletedEvent | ChatStreamErrorEvent | None = None
+        try:
+            # 提前遇到终态时显式关闭 Provider 生成器，及时释放底层 HTTP 流。
+            async with aclosing(
+                self.provider.stream_chat(context.request)
+            ) as provider_stream:
+                async for provider_event in provider_stream:
+                    if isinstance(provider_event, ChatStreamDeltaEvent):
+                        content_parts.append(provider_event.delta)
+                        yield MessageStreamDeltaEvent(
+                            message_id=assistant_message.id,
+                            delta=provider_event.delta,
+                        )
+                        continue
+
+                    if isinstance(
+                        provider_event,
+                        (ChatStreamCompletedEvent, ChatStreamErrorEvent),
+                    ):
+                        terminal_event = provider_event
+                        break
+
+                    # Provider 返回未知对象说明内部协议被破坏，不能继续当作成功处理。
+                    break
+        except Exception as exc:
+            error = self._to_provider_exception(exc)
+            failed_event = await self._fail_stream_message(
+                assistant_message=assistant_message,
+                partial_content="".join(content_parts),
+                error=error,
+            )
+            app_logger.warning(
+                "模型流式调用异常 conversation_id=%s error_code=%s",
+                conversation_id,
+                error.code.value,
+                exc_info=True,
+            )
+            yield failed_event
+            return
+
+        partial_content = "".join(content_parts)
+        if isinstance(terminal_event, ChatStreamErrorEvent):
+            if terminal_event.model is not None:
+                assistant_message.model_name = terminal_event.model
+            error = BusinessException(
+                code=ErrorCode.MODEL_REQUEST_FAILED,
+                message="模型流式调用失败，请稍后重试",
+                status_code=502,
+            )
+            yield await self._fail_stream_message(
+                assistant_message=assistant_message,
+                partial_content=partial_content,
+                error=error,
+            )
+            return
+
+        if (
+            terminal_event is None
+            or terminal_event.response.content != partial_content
+        ):
+            error = BusinessException(
+                code=ErrorCode.MODEL_STREAM_PROTOCOL_ERROR,
+                message="模型流式响应不完整，请稍后重试",
+                status_code=502,
+            )
+            yield await self._fail_stream_message(
+                assistant_message=assistant_message,
+                partial_content=partial_content,
+                error=error,
+            )
+            return
+
+        completed_message = await self._complete_assistant_response(
+            conversation=context.conversation,
+            conversation_id=conversation_id,
+            assistant_message=assistant_message,
+            assistant_response=terminal_event.response,
+        )
+        yield MessageStreamCompletedEvent(message=completed_message)
+
+    async def _prepare_message_generation(
+        self,
+        user_id: UUID,
+        conversation_id: UUID,
+        content: str,
+    ) -> _MessageGenerationContext:
+        """构建模型请求，并在同一事务中创建用户消息和助手占位。"""
         app_logger.info("收到用户消息 conversation_id=%s", conversation_id)
         conversation = await self._get_owned_conversation(user_id, conversation_id)
-
         summary = await self.summary_repository.get_by_conversation_id(conversation_id)
         history_messages = await self._get_history(conversation_id, summary=summary)
         request = self._build_chat_request(
@@ -181,7 +325,6 @@ class ConversationService:
             summary_content=summary.content if summary is not None else None,
         )
 
-        # 用户问题已经被服务端接收，是需要独立持久化的事实记录。
         user_message = MessageEntity(
             conversation_id=conversation_id,
             role=MessageRole.USER,
@@ -190,11 +333,6 @@ class ConversationService:
             status=MessageStatus.COMPLETED,
             finished_at=datetime.now(timezone.utc),
         )
-        await self.message_repository.create(user_message)
-        await self._commit()
-        await self._save_to_memory(conversation_id, user_message)
-
-        # 调用模型前先创建 pending 记录，确保超时或异常也能被追踪。
         assistant_message = MessageEntity(
             conversation_id=conversation_id,
             role=MessageRole.ASSISTANT,
@@ -202,13 +340,19 @@ class ConversationService:
             model_name=conversation.model_name,
             status=MessageStatus.PENDING,
         )
-        await self.message_repository.create(assistant_message)
+        try:
+            # 两条记录共同表达“开始一次生成”，任意一条写入失败都不能留下孤立消息。
+            await self.message_repository.create(user_message)
+            await self.message_repository.create(assistant_message)
+        except Exception:
+            await self.db.rollback()
+            raise
         await self._commit()
-
-        return await self._generate_assistant_response(
+        await self._save_to_memory(conversation_id, user_message)
+        return _MessageGenerationContext(
             conversation=conversation,
-            conversation_id=conversation_id,
             request=request,
+            user_message=user_message,
             assistant_message=assistant_message,
         )
 
@@ -296,13 +440,29 @@ class ConversationService:
             assistant_response = await self.provider.chat(request)
         except Exception as exc:
             await self._mark_assistant_failed(assistant_message, exc)
+        return await self._complete_assistant_response(
+            conversation=conversation,
+            conversation_id=conversation_id,
+            assistant_message=assistant_message,
+            assistant_response=assistant_response,
+        )
 
+    async def _complete_assistant_response(
+        self,
+        conversation: ConversationEntity,
+        conversation_id: UUID,
+        assistant_message: MessageEntity,
+        assistant_response: ChatResponse,
+    ) -> MessageResponse:
+        """一次写入完整助手响应，再回填缓存并尽力调度会话摘要。"""
         assistant_message.content = assistant_response.content
         assistant_message.model_name = assistant_response.model
         assistant_message.prompt_tokens = assistant_response.prompt_tokens
         assistant_message.completion_tokens = assistant_response.completion_tokens
         assistant_message.total_tokens = assistant_response.total_tokens
         assistant_message.status = MessageStatus.COMPLETED
+        assistant_message.error_code = None
+        assistant_message.error_message = None
         assistant_message.finished_at = datetime.now(timezone.utc)
         await self.message_repository.update(assistant_message)
         await self._commit()
@@ -416,12 +576,7 @@ class ConversationService:
     ) -> None:
         """将助手消息更新为失败状态，并抛出安全的业务异常。"""
         error = self._to_provider_exception(exc)
-        assistant_message.status = MessageStatus.FAILED
-        assistant_message.error_code = error.code.value
-        assistant_message.error_message = error.message
-        assistant_message.finished_at = datetime.now(timezone.utc)
-        await self.message_repository.update(assistant_message)
-        await self._commit()
+        await self._persist_assistant_failure(assistant_message, error)
         app_logger.warning(
             "模型调用失败 conversation_id=%s error_code=%s",
             assistant_message.conversation_id,
@@ -429,6 +584,38 @@ class ConversationService:
             exc_info=True,
         )
         raise error
+
+    async def _fail_stream_message(
+        self,
+        assistant_message: MessageEntity,
+        partial_content: str,
+        error: BusinessException,
+    ) -> MessageStreamErrorEvent:
+        """保存流式部分正文和失败终态，并构造 Service 错误事件。"""
+        assistant_message.content = partial_content
+        await self._persist_assistant_failure(assistant_message, error)
+        app_logger.warning(
+            "助手流式消息失败 conversation_id=%s message_id=%s error_code=%s",
+            assistant_message.conversation_id,
+            assistant_message.id,
+            error.code.value,
+        )
+        return MessageStreamErrorEvent(
+            message=MessageResponse.model_validate(assistant_message)
+        )
+
+    async def _persist_assistant_failure(
+        self,
+        assistant_message: MessageEntity,
+        error: BusinessException,
+    ) -> None:
+        """把安全业务错误持久化到助手消息，但不决定抛异常还是产生流事件。"""
+        assistant_message.status = MessageStatus.FAILED
+        assistant_message.error_code = error.code.value
+        assistant_message.error_message = error.message
+        assistant_message.finished_at = datetime.now(timezone.utc)
+        await self.message_repository.update(assistant_message)
+        await self._commit()
 
     def _to_provider_exception(self, exc: Exception) -> BusinessException:
         """把 Provider 异常映射为稳定错误码和用户可读中文提示。"""

@@ -219,7 +219,7 @@ async for event in provider.stream_chat(request):
 → Provider 内部流事件
 ```
 
-下一模块再做：
+第 23 模块已经完成：
 
 ```text
 Provider 事件
@@ -321,16 +321,16 @@ except Exception:
 
 本模块尚未实现取消按钮和取消后的数据库状态，只是先保护这条传播路径。
 
+详见[Service 流式消息状态与事务边界](23-service-stream-message-state.md)。
+
 ## 13. 当前没有实现什么
 
-- Conversation Service 还没有消费流事件。
-- 助手消息还不会在流开始时进入生成中状态。
 - HTTP `/messages/stream` 和 SSE 帧尚未实现。
 - 前端不会逐段显示。
 - 尚未实现用户主动取消。
 - 流式过程中不实时写 PostgreSQL。
 
-当前普通聊天仍调用 `await provider.chat()`，所以现有业务行为不变。
+当前普通聊天仍调用 `await provider.chat()`；新的 Service 流尚未接入 HTTP，因此现有接口行为不变。
 
 ## 14. 测试保护什么
 

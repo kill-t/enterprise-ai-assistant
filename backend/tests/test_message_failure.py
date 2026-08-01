@@ -167,7 +167,8 @@ def test_model_timeout_persists_failed_assistant_message() -> None:
     assert assistant_message.error_message == "模型响应超时，请稍后重试"
     assert assistant_message.finished_at is not None
     assert [message.role for message in memory_manager.saved_messages] == ["user"]
-    assert db.commit.await_count == 3
+    # 用户消息和助手占位在同一事务创建，模型失败再提交一次 FAILED 终态。
+    assert db.commit.await_count == 2
 
 
 def test_failed_message_response_exposes_safe_error_details() -> None:

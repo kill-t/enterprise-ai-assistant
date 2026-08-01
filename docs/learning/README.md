@@ -26,3 +26,4 @@
 20. [摘要失败分类、延迟重试与指数退避](20-summary-failure-retry-backoff.md)
 21. [摘要任务周期恢复与投递租约](21-summary-recovery-and-dispatch-lease.md)
 22. [模型流式输出的内部契约](22-internal-llm-stream-contract.md)
+23. [Service 流式消息状态与事务边界](23-service-stream-message-state.md)
