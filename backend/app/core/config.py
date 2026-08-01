@@ -32,6 +32,15 @@ class ModelContextSettings(BaseModel):
             raise ValueError("输出预留与安全余量必须小于模型上下文窗口")
         return self
 
+    @property
+    def available_input_tokens(self) -> int:
+        """返回扣除模型输出预留和安全余量后的输入上限。"""
+        return (
+            self.context_window_tokens
+            - self.max_output_tokens
+            - self.token_safety_margin
+        )
+
 
 class ProviderSettings(ModelContextSettings):
     """单个大模型 Provider 的访问配置。"""
@@ -70,6 +79,7 @@ class ConversationMemorySettings(BaseModel):
 
     summary_trigger_tokens: int = Field(default=3000, gt=0)
     recent_history_budget_tokens: int = Field(default=2000, gt=0)
+    summary_batch_tokens: int = Field(default=4000, gt=0)
 
 
 class Settings(BaseSettings):

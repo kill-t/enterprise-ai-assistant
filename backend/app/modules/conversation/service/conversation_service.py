@@ -85,6 +85,9 @@ class ConversationService:
             recent_history_budget_tokens=(
                 settings.conversation_memory.recent_history_budget_tokens
             ),
+            summary_batch_tokens=(
+                settings.conversation_memory.summary_batch_tokens
+            ),
         )
 
     async def create(

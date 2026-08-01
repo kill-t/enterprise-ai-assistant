@@ -37,6 +37,10 @@ class ConversationSummaryConflictError(RuntimeError):
     """表示模型生成期间滚动摘要已被其他执行版本修改。"""
 
 
+class ConversationSummaryPromptBudgetExceededError(ValueError):
+    """表示完整摘要 Prompt 已超过当前模型可用输入预算。"""
+
+
 @dataclass(frozen=True)
 class SummarySourceMessage:
     """保存脱离 ORM Session 后仍可安全使用的单条摘要源消息。"""
@@ -88,12 +92,18 @@ class RollingConversationSummaryProcessor:
         message_repository: MessageRepository,
         summary_repository: ConversationSummaryRepository,
         provider: BaseChatProvider,
+        model_name: str,
+        input_budget_tokens: int,
         token_counter_factory: Callable[[str], TokenCounter] = TokenCounter,
     ) -> None:
-        """注入消息、摘要仓库、模型 Provider 和 token 计数器工厂。"""
+        """注入仓库、Provider、模型输入预算和 token 计数器工厂。"""
+        if input_budget_tokens <= 0:
+            raise ValueError("摘要模型可用输入预算必须大于零")
         self.message_repository = message_repository
         self.summary_repository = summary_repository
         self.provider = provider
+        self.model_name = model_name
+        self.input_budget_tokens = input_budget_tokens
         self.token_counter_factory = token_counter_factory
 
     async def prepare(
@@ -156,6 +166,14 @@ class RollingConversationSummaryProcessor:
     ) -> GeneratedConversationSummary:
         """在数据库读事务结束后调用 LLM，并严格校验五栏 JSON。"""
         request = self._build_request(prepared)
+        prompt_tokens = self.token_counter_factory(self.model_name).count_messages(
+            request.messages
+        )
+        if prompt_tokens > self.input_budget_tokens:
+            raise ConversationSummaryPromptBudgetExceededError(
+                "摘要 Prompt 超过模型可用输入预算"
+            )
+
         response = await self.provider.chat(request)
         # JSON 合法并不代表字段完整，最终仍由 Pydantic 校验五栏结构和非空内容。
         structured_content = ConversationSummaryContent.model_validate_json(

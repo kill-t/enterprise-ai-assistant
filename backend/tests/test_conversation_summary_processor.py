@@ -20,6 +20,7 @@ from app.infrastructure.llm.schemas import (
 from app.modules.conversation.repository.message_repository import MessageRepository
 from app.modules.conversation.service.conversation_summary_processor import (
     ConversationSummaryConflictError,
+    ConversationSummaryPromptBudgetExceededError,
     ConversationSummaryRangeError,
     RollingConversationSummaryProcessor,
 )
@@ -35,6 +36,10 @@ class CharacterTokenCounter:
     def count(self, text: str) -> int:
         """把摘要字符数作为可预测 token 数。"""
         return len(text)
+
+    def count_messages(self, messages: list[ChatMessage]) -> int:
+        """把 Prompt 中所有消息正文字符数作为稳定输入 token。"""
+        return sum(len(message.content) for message in messages)
 
 
 class RecordingSummaryProvider:
@@ -77,7 +82,12 @@ def build_message(
     )
 
 
-def build_processor(messages, existing_summary=None, provider=None):
+def build_processor(
+    messages,
+    existing_summary=None,
+    provider=None,
+    input_budget_tokens: int = 10000,
+):
     """组装滚动摘要处理器及可观察依赖。"""
     message_repository = SimpleNamespace(
         list_completed_in_summary_range=AsyncMock(return_value=messages)
@@ -93,6 +103,8 @@ def build_processor(messages, existing_summary=None, provider=None):
         summary_repository=summary_repository,
         provider=recording_provider,
         token_counter_factory=CharacterTokenCounter,
+        model_name="mock-summary",
+        input_budget_tokens=input_budget_tokens,
     )
     return processor, message_repository, summary_repository, recording_provider
 
@@ -233,6 +245,39 @@ def test_processor_rejects_invalid_model_json_without_writing_summary() -> None:
 
     summary_repository.create.assert_not_awaited()
     summary_repository.update.assert_not_awaited()
+
+
+def test_processor_rejects_prompt_over_budget_before_calling_model() -> None:
+    """系统词、旧摘要和批次消息总输入超限时，不得把请求发送给 Provider。"""
+    now = datetime.now(timezone.utc)
+    conversation_id = uuid4()
+    target = build_message(
+        conversation_id,
+        MessageRole.ASSISTANT,
+        "一段需要摘要的回答",
+        now,
+    )
+    job = SimpleNamespace(
+        id=uuid4(),
+        conversation_id=conversation_id,
+        target_message_id=target.id,
+        target_created_at=target.created_at,
+    )
+    processor, _, summary_repository, provider = build_processor(
+        [target],
+        input_budget_tokens=20,
+    )
+
+    async def generate_oversized_prompt() -> None:
+        """准备输入后触发模型调用前的最终预算检查。"""
+        prepared = await processor.prepare(job)
+        await processor.generate(prepared)
+
+    with pytest.raises(ConversationSummaryPromptBudgetExceededError):
+        asyncio.run(generate_oversized_prompt())
+
+    assert provider.requests == []
+    summary_repository.create.assert_not_awaited()
 
 
 def test_processor_rejects_range_when_frozen_target_is_missing() -> None:

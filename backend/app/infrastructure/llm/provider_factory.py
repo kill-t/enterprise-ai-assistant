@@ -36,3 +36,15 @@ class ProviderFactory:
         if provider == "mock":
             return ModelContextSettings()
         raise ValueError(f"Unsupported provider: {provider}")
+
+    @staticmethod
+    def get_model_name() -> str:
+        """返回默认 Provider 实际使用的模型名，供调用前 token 估算。"""
+        provider = settings.default_provider.lower()
+        if provider == "deepseek":
+            return settings.deepseek.model
+        if provider == "openai":
+            return settings.openai.model
+        if provider == "mock":
+            return "mock"
+        raise ValueError(f"Unsupported provider: {provider}")

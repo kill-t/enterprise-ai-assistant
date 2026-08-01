@@ -25,10 +25,13 @@ async def _execute_summary_job(job_id: UUID) -> str:
     try:
         async with SessionLocal() as db:
             repository = ConversationSummaryJobRepository(db)
+            context_settings = ProviderFactory.get_context_settings()
             processor = RollingConversationSummaryProcessor(
                 message_repository=MessageRepository(db),
                 summary_repository=ConversationSummaryRepository(db),
                 provider=ProviderFactory.create(),
+                model_name=ProviderFactory.get_model_name(),
+                input_budget_tokens=context_settings.available_input_tokens,
             )
             service = ConversationSummaryWorkerService(
                 db=db,

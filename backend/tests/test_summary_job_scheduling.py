@@ -80,6 +80,7 @@ def build_service(
     active_job=None,
     threshold: int = 10,
     recent_budget: int = 4,
+    batch_budget: int = 100,
     dispatcher=None,
     events: list[str] | None = None,
 ):
@@ -104,6 +105,7 @@ def build_service(
         dispatcher=dispatcher or RecordingDispatcher(event_log),
         summary_trigger_tokens=threshold,
         recent_history_budget_tokens=recent_budget,
+        summary_batch_tokens=batch_budget,
         token_counter_factory=lambda model_name: CharacterMessageCounter(),
     )
     return service, db, job_repository, event_log
@@ -278,6 +280,56 @@ def test_summary_target_leaves_recent_complete_turns_uncovered() -> None:
 
     assert job is not None
     assert job.target_message_id == messages[3].id
+
+
+def test_summary_target_limits_old_history_to_one_token_batch() -> None:
+    """积压旧历史超过批次预算时，本次任务只能冻结最早的一批完整轮次。"""
+    messages = [
+        build_message(MessageRole.USER, "问一"),
+        build_message(MessageRole.ASSISTANT, "答一"),
+        build_message(MessageRole.USER, "问二"),
+        build_message(MessageRole.ASSISTANT, "答二"),
+        build_message(MessageRole.USER, "问三"),
+        build_message(MessageRole.ASSISTANT, "答三"),
+        build_message(MessageRole.USER, "问四"),
+        build_message(MessageRole.ASSISTANT, "答四"),
+    ]
+    service, _, _, _ = build_service(
+        messages,
+        threshold=8,
+        recent_budget=4,
+        batch_budget=8,
+    )
+
+    job = asyncio.run(
+        service.maybe_schedule(SimpleNamespace(id=uuid4(), model_name="mock"))
+    )
+
+    assert job is not None
+    assert job.target_message_id == messages[3].id
+
+
+def test_one_oversized_old_turn_is_kept_whole_to_let_cursor_progress() -> None:
+    """单轮超过批次软上限时宁可完整处理一轮，也不能截断或永远卡住游标。"""
+    messages = [
+        build_message(MessageRole.USER, "超长问题"),
+        build_message(MessageRole.ASSISTANT, "完整回答"),
+        build_message(MessageRole.USER, "新问"),
+        build_message(MessageRole.ASSISTANT, "新答"),
+    ]
+    service, _, _, _ = build_service(
+        messages,
+        threshold=5,
+        recent_budget=4,
+        batch_budget=3,
+    )
+
+    job = asyncio.run(
+        service.maybe_schedule(SimpleNamespace(id=uuid4(), model_name="mock"))
+    )
+
+    assert job is not None
+    assert job.target_message_id == messages[1].id
 
 
 def test_celery_dispatcher_sends_only_job_id_with_deterministic_task_id() -> None:

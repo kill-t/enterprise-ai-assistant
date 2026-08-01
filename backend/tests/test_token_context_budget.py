@@ -1,8 +1,10 @@
 import pytest
+from pathlib import Path
 from types import SimpleNamespace
 
 from app.common.exception.business_exception import BusinessException
 from app.common.exception.error_code import ErrorCode
+from app.core.config import ConversationMemorySettings, ModelContextSettings
 from app.infrastructure.llm.context_manager import (
     ContextBudgetExceededError,
     ContextManager,
@@ -147,6 +149,31 @@ def test_available_input_budget_reserves_output_and_safety_margin() -> None:
     )
 
     assert manager.available_input_tokens == 70
+
+
+def test_model_context_settings_exposes_same_available_input_budget() -> None:
+    """后台摘要和前台聊天必须复用相同的输入预算计算公式。"""
+    context = ModelContextSettings(
+        context_window_tokens=100,
+        max_output_tokens=20,
+        token_safety_margin=10,
+    )
+
+    assert context.available_input_tokens == 70
+
+
+def test_conversation_memory_has_positive_summary_batch_default() -> None:
+    """摘要批次必须拥有独立正数预算，不能把全部积压历史一次发送给模型。"""
+    memory = ConversationMemorySettings()
+
+    assert memory.summary_batch_tokens == 4000
+
+
+def test_summary_batch_budget_is_documented_in_environment_template() -> None:
+    """新增配置必须同步到环境变量模板，避免部署时只能依赖隐藏默认值。"""
+    environment_template = Path(".env.example").read_text(encoding="utf-8")
+
+    assert "CONVERSATION_MEMORY__SUMMARY_BATCH_TOKENS=4000" in environment_template
 
 
 def test_service_maps_required_content_overflow_to_business_error() -> None:

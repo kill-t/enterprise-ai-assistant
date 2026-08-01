@@ -22,3 +22,4 @@
 16. [摘要任务触发与提交后可靠投递](16-summary-job-scheduling-and-dispatch.md)
 17. [摘要 Worker 原子领取与重复执行保护](17-summary-worker-atomic-claim.md)
 18. [滚动摘要生成、冻结范围与原子保存](18-rolling-summary-generation.md)
+19. [摘要批次 Token 上限与调用前预算检查](19-summary-batch-token-budget.md)

@@ -35,6 +35,7 @@ class ConversationSummaryJobService:
         dispatcher: SummaryJobDispatcher,
         summary_trigger_tokens: int,
         recent_history_budget_tokens: int = 2000,
+        summary_batch_tokens: int = 4000,
         token_counter_factory: Callable[[str], MessageTokenCounter] = TokenCounter,
     ) -> None:
         """组装任务判断所需的数据库、投递器、阈值和 token 计数器。"""
@@ -45,6 +46,7 @@ class ConversationSummaryJobService:
         self.dispatcher = dispatcher
         self.summary_trigger_tokens = summary_trigger_tokens
         self.recent_history_budget_tokens = recent_history_budget_tokens
+        self.summary_batch_tokens = summary_batch_tokens
         self.token_counter_factory = token_counter_factory
 
     async def maybe_schedule(
@@ -151,21 +153,45 @@ class ConversationSummaryJobService:
         # 从最新轮次向前保留原文；第一个超出预算的轮次及其更早历史进入摘要。
         for index in range(len(turns) - 1, -1, -1):
             turn = turns[index]
-            turn_tokens = counter.count_messages(
-                [
-                    ChatMessage(
-                        role=ChatRole(message.role.value),
-                        content=message.content,
-                    )
-                    for message in turn
-                ]
-            )
+            turn_tokens = self._count_turn_tokens(turn, counter)
             if retained_tokens + turn_tokens > self.recent_history_budget_tokens:
                 break
             retained_tokens += turn_tokens
             retained_start = index
 
-        return [message for turn in turns[:retained_start] for message in turn]
+        candidate_turns = turns[:retained_start]
+        selected_turns: list[list[MessageEntity]] = []
+        selected_tokens = 0
+
+        # 从最旧轮次开始连续推进游标；不能跳过中间历史只摘要更晚内容。
+        for turn in candidate_turns:
+            turn_tokens = self._count_turn_tokens(turn, counter)
+            if (
+                selected_turns
+                and selected_tokens + turn_tokens > self.summary_batch_tokens
+            ):
+                break
+            # 第一轮即使超过软上限也保持完整，最终硬上限由 Processor 调用前校验。
+            selected_turns.append(turn)
+            selected_tokens += turn_tokens
+
+        return [message for turn in selected_turns for message in turn]
+
+    @staticmethod
+    def _count_turn_tokens(
+        turn: list[MessageEntity],
+        counter: MessageTokenCounter,
+    ) -> int:
+        """把一个完整数据库轮次转换为标准消息并估算 token。"""
+        return counter.count_messages(
+            [
+                ChatMessage(
+                    role=ChatRole(message.role.value),
+                    content=message.content,
+                )
+                for message in turn
+            ]
+        )
 
     @staticmethod
     def _group_complete_turns(
