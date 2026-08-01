@@ -34,9 +34,9 @@ ConversationService
 Mock Provider 同样实现异步接口，但不访问网络，稳定返回固定结果。它用于本地开发、单元测试和
 演示环境，使测试不依赖 API Key、网络或模型限流。
 
-## 本模块没有做什么
+## 后续能力
 
-- 尚未实现流式 `stream_chat()`。
+- 流式 `stream_chat()` 已在[模型流式输出的内部契约](22-internal-llm-stream-contract.md)中实现。
 - 尚未实现超时、重试、取消、token 计量的统一网关策略。
 - `OpenAIProvider` 仍是异步预留入口，真实请求实现将在接入真实 Provider 时完成。
 

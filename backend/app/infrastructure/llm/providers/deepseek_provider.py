@@ -1,14 +1,19 @@
 import time
+from collections.abc import AsyncIterator
 
 from openai import AsyncOpenAI
 
-from app.core.loggers import llm_logger
 from app.core.config import settings
+from app.core.loggers import llm_logger
 from app.infrastructure.llm.base import BaseChatProvider
 from app.infrastructure.llm.schemas import (
     ChatRequest,
     ChatResponse,
     ChatResponseFormat,
+    ChatStreamCompletedEvent,
+    ChatStreamDeltaEvent,
+    ChatStreamErrorEvent,
+    ChatStreamEvent,
 )
 
 
@@ -70,6 +75,90 @@ class DeepSeekProvider(BaseChatProvider):
             completion_tokens=response.usage.completion_tokens,
             total_tokens=response.usage.total_tokens,
         )
+
+    async def stream_chat(
+        self,
+        request: ChatRequest,
+    ) -> AsyncIterator[ChatStreamEvent]:
+        """消费 DeepSeek 的异步 Chunk 流，并转换成厂商无关的内部事件。"""
+        start = time.perf_counter()
+        content_parts: list[str] = []
+        model = settings.deepseek.model
+        finish_reason = "stop"
+        prompt_tokens = 0
+        completion_tokens = 0
+        total_tokens = 0
+
+        request_options = {
+            "model": settings.deepseek.model,
+            "messages": self._build_messages(request),
+            "temperature": request.temperature,
+            "max_tokens": settings.deepseek.max_output_tokens,
+            "stream": True,
+            # DeepSeek 会在正文结束后追加一个 choices 为空、usage 非空的数据块。
+            "stream_options": {"include_usage": True},
+        }
+        if request.response_format == ChatResponseFormat.JSON_OBJECT:
+            request_options["response_format"] = {"type": "json_object"}
+
+        try:
+            sdk_stream = await self.client.chat.completions.create(**request_options)
+            async for chunk in sdk_stream:
+                model = chunk.model or model
+
+                # usage 通常只出现在最后一个 choices 为空的数据块中。
+                if chunk.usage is not None:
+                    prompt_tokens = chunk.usage.prompt_tokens
+                    completion_tokens = chunk.usage.completion_tokens
+                    total_tokens = chunk.usage.total_tokens
+
+                if not chunk.choices:
+                    continue
+                choice = chunk.choices[0]
+                if choice.finish_reason is not None:
+                    finish_reason = choice.finish_reason
+                delta = choice.delta.content
+                if delta:
+                    content_parts.append(delta)
+                    yield ChatStreamDeltaEvent(delta=delta)
+        except Exception as exc:
+            llm_logger.warning(
+                "DeepSeek 模型流式调用失败 provider=%s model=%s reason=%s latency=%.3fs",
+                self.PROVIDER_NAME,
+                model,
+                type(exc).__name__,
+                time.perf_counter() - start,
+                exc_info=True,
+            )
+            yield ChatStreamErrorEvent(
+                error_code="LLM_STREAM_ERROR",
+                error_message="模型流式调用失败",
+                model=model,
+            )
+            return
+
+        response = ChatResponse(
+            content="".join(content_parts),
+            model=model,
+            prompt_tokens=prompt_tokens,
+            completion_tokens=completion_tokens,
+            total_tokens=total_tokens,
+            finish_reason=finish_reason,
+        )
+        llm_logger.info(
+            (
+                "DeepSeek 模型流式调用完成 provider=%s model=%s "
+                "prompt_tokens=%s completion_tokens=%s total_tokens=%s "
+                "latency=%.3fs"
+            ),
+            self.PROVIDER_NAME,
+            response.model,
+            response.prompt_tokens,
+            response.completion_tokens,
+            response.total_tokens,
+            time.perf_counter() - start,
+        )
+        yield ChatStreamCompletedEvent(response=response)
 
     def _build_messages(
         self,

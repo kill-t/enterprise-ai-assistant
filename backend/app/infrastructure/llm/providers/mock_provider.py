@@ -1,11 +1,17 @@
+import asyncio
 import json
+from collections.abc import AsyncIterator
 
+from app.core.loggers import llm_logger
 from app.infrastructure.llm.base import BaseChatProvider
-
 from app.infrastructure.llm.schemas import (
     ChatRequest,
     ChatResponse,
     ChatResponseFormat,
+    ChatStreamCompletedEvent,
+    ChatStreamDeltaEvent,
+    ChatStreamErrorEvent,
+    ChatStreamEvent,
 )
 
 
@@ -13,6 +19,7 @@ class MockProvider(BaseChatProvider):
     """返回固定响应的测试 Provider，不访问外部模型服务。"""
 
     MODEL_NAME = "mock"
+    STREAM_CHUNKS = ("Hello, ", "I'm Enterprise ", "AI Assistant", ".")
 
     async def chat(
         self,
@@ -50,3 +57,41 @@ class MockProvider(BaseChatProvider):
             completion_tokens=8,
             total_tokens=18,
         )
+
+    async def stream_chat(
+        self,
+        request: ChatRequest,
+    ) -> AsyncIterator[ChatStreamEvent]:
+        """把固定响应分成可预测片段，并支持显式模拟中途异常。"""
+        try:
+            response = await self.chat(request)
+            chunks = (
+                self.STREAM_CHUNKS
+                if response.content == "".join(self.STREAM_CHUNKS)
+                else (response.content,)
+            )
+            for index, chunk in enumerate(chunks):
+                # 测试开关只存在于 Mock Provider，用来稳定复现“已输出部分文本后失败”。
+                if (
+                    request.metadata.get("simulate_stream_error") == "true"
+                    and index == 1
+                ):
+                    raise ConnectionError("模拟模型流连接中断")
+                if chunk:
+                    yield ChatStreamDeltaEvent(delta=chunk)
+                # 主动交还事件循环，模拟真实网络流等待下一个数据块。
+                await asyncio.sleep(0)
+        except Exception as exc:
+            llm_logger.warning(
+                "Mock 模型流式生成失败 reason=%s",
+                type(exc).__name__,
+                exc_info=True,
+            )
+            yield ChatStreamErrorEvent(
+                error_code="LLM_STREAM_ERROR",
+                error_message="模型流式调用失败",
+                model=self.MODEL_NAME,
+            )
+            return
+
+        yield ChatStreamCompletedEvent(response=response)
