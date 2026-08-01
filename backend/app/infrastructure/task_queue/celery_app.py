@@ -20,6 +20,13 @@ def create_celery_app() -> Celery:
         broker_connection_retry_on_startup=True,
         task_soft_time_limit=settings.worker.task_soft_time_limit_seconds,
         task_time_limit=settings.worker.task_time_limit_seconds,
+        beat_schedule={
+            "recover-conversation-summary-jobs": {
+                "task": "conversation.recover_summary_jobs",
+                "schedule": settings.worker.summary_recovery_interval_seconds,
+                "options": {"queue": settings.worker.default_queue},
+            }
+        },
         enable_utc=True,
         timezone="UTC",
     )

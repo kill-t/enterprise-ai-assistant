@@ -24,3 +24,4 @@
 18. [滚动摘要生成、冻结范围与原子保存](18-rolling-summary-generation.md)
 19. [摘要批次 Token 上限与调用前预算检查](19-summary-batch-token-budget.md)
 20. [摘要失败分类、延迟重试与指数退避](20-summary-failure-retry-backoff.md)
+21. [摘要任务周期恢复与投递租约](21-summary-recovery-and-dispatch-lease.md)

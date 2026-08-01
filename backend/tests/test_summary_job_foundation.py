@@ -47,6 +47,7 @@ def test_summary_job_freezes_target_and_has_database_constraints() -> None:
     assert table.c.target_created_at.nullable is False
     assert table.c.idempotency_key.nullable is False
     assert table.c.next_retry_at.nullable is True
+    assert table.c.dispatch_claimed_at.nullable is True
     assert any(
         constraint.name == "uq_conversation_summary_jobs_idempotency_key"
         for constraint in table.constraints
@@ -80,14 +81,14 @@ def test_only_one_active_summary_job_is_allowed_per_conversation() -> None:
         (SummaryJobStatus.PENDING, SummaryJobStatus.RUNNING),
         (SummaryJobStatus.RUNNING, SummaryJobStatus.SUCCEEDED),
         (SummaryJobStatus.RUNNING, SummaryJobStatus.FAILED),
-        (SummaryJobStatus.FAILED, SummaryJobStatus.PENDING),
+        (SummaryJobStatus.RUNNING, SummaryJobStatus.PENDING),
     ],
 )
 def test_summary_job_state_machine_allows_expected_transitions(
     current: SummaryJobStatus,
     target: SummaryJobStatus,
 ) -> None:
-    """状态机应允许启动、完成、失败和显式重试。"""
+    """状态机应允许启动、完成、终止失败和运行中任务延迟重试。"""
     SummaryJobStateMachine.ensure_transition(current, target)
 
 
@@ -96,6 +97,7 @@ def test_summary_job_state_machine_allows_expected_transitions(
     [
         (SummaryJobStatus.PENDING, SummaryJobStatus.SUCCEEDED),
         (SummaryJobStatus.SUCCEEDED, SummaryJobStatus.RUNNING),
+        (SummaryJobStatus.FAILED, SummaryJobStatus.PENDING),
         (SummaryJobStatus.FAILED, SummaryJobStatus.SUCCEEDED),
     ],
 )
@@ -175,3 +177,15 @@ def test_summary_retry_migration_adds_next_retry_cursor() -> None:
     assert 'down_revision: Union[str, Sequence[str], None] = "e3b1c8a46f72"' in migration
     assert '"next_retry_at"' in migration
     assert 'op.drop_column("conversation_summary_jobs", "next_retry_at")' in migration
+
+
+def test_dispatch_claim_migration_follows_retry_schedule() -> None:
+    """投递租约迁移必须接在延迟重试之后，并提供扫描索引和降级操作。"""
+    migration = Path(
+        "migrations/versions/a8c4e6f1b209_add_summary_job_dispatch_claim.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'down_revision: Union[str, Sequence[str], None] = "f7a9c2d4e681"' in migration
+    assert '"dispatch_claimed_at"' in migration
+    assert '"ix_conversation_summary_jobs_dispatch_claim"' in migration
+    assert 'op.drop_column("conversation_summary_jobs", "dispatch_claimed_at")' in migration

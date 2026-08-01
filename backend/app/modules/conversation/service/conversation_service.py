@@ -88,6 +88,9 @@ class ConversationService:
             summary_batch_tokens=(
                 settings.conversation_memory.summary_batch_tokens
             ),
+            dispatch_lease_seconds=(
+                settings.worker.summary_dispatch_lease_seconds
+            ),
         )
 
     async def create(

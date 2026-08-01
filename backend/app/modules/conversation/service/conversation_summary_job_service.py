@@ -22,6 +22,9 @@ from app.modules.conversation.repository.conversation_summary_repository import 
     ConversationSummaryRepository,
 )
 from app.modules.conversation.repository.message_repository import MessageRepository
+from app.modules.conversation.service.conversation_summary_dispatch_service import (
+    ConversationSummaryDispatchService,
+)
 
 
 class ConversationSummaryJobService:
@@ -37,6 +40,7 @@ class ConversationSummaryJobService:
         summary_trigger_tokens: int,
         recent_history_budget_tokens: int = 2000,
         summary_batch_tokens: int = 4000,
+        dispatch_lease_seconds: int = 120,
         token_counter_factory: Callable[[str], MessageTokenCounter] = TokenCounter,
     ) -> None:
         """组装任务判断所需的数据库、投递器、阈值和 token 计数器。"""
@@ -44,7 +48,12 @@ class ConversationSummaryJobService:
         self.message_repository = message_repository
         self.summary_repository = summary_repository
         self.job_repository = job_repository
-        self.dispatcher = dispatcher
+        self.dispatch_service = ConversationSummaryDispatchService(
+            db=db,
+            job_repository=job_repository,
+            dispatcher=dispatcher,
+            dispatch_lease_seconds=dispatch_lease_seconds,
+        )
         self.summary_trigger_tokens = summary_trigger_tokens
         self.recent_history_budget_tokens = recent_history_budget_tokens
         self.summary_batch_tokens = summary_batch_tokens
@@ -230,26 +239,7 @@ class ConversationSummaryJobService:
         if next_retry_at is not None and next_retry_at > datetime.now(timezone.utc):
             return
 
-        try:
-            celery_task_id = await self.dispatcher.dispatch(job.id)
-        except Exception as exc:
-            # 数据库中的 PENDING 任务就是恢复依据，Broker 故障不删除任务。
-            app_logger.warning(
-                "摘要任务投递失败，将保留待处理状态 job_id=%s reason=%s",
-                job.id,
-                type(exc).__name__,
-                exc_info=True,
-            )
-            return
-
-        job.celery_task_id = celery_task_id
-        await self.job_repository.update(job)
-        await self._commit()
-        app_logger.info(
-            "摘要任务已投递 job_id=%s celery_task_id=%s",
-            job.id,
-            celery_task_id,
-        )
+        await self.dispatch_service.dispatch_if_due(job.id)
 
     async def _commit(self) -> None:
         """提交任务事务，并在失败时回滚当前异步 Session。"""

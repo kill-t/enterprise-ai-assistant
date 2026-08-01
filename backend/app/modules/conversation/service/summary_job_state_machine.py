@@ -7,10 +7,11 @@ class SummaryJobStateMachine:
     ALLOWED_TRANSITIONS = {
         SummaryJobStatus.PENDING: {SummaryJobStatus.RUNNING},
         SummaryJobStatus.RUNNING: {
+            SummaryJobStatus.PENDING,
             SummaryJobStatus.SUCCEEDED,
             SummaryJobStatus.FAILED,
         },
-        SummaryJobStatus.FAILED: {SummaryJobStatus.PENDING},
+        SummaryJobStatus.FAILED: set(),
         SummaryJobStatus.SUCCEEDED: set(),
     }
 

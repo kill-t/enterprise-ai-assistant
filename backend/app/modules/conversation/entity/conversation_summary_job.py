@@ -49,6 +49,11 @@ class ConversationSummaryJobEntity(Base):
             "status",
             "next_retry_at",
         ),
+        Index(
+            "ix_conversation_summary_jobs_dispatch_claim",
+            "status",
+            "dispatch_claimed_at",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -92,6 +97,11 @@ class ConversationSummaryJobEntity(Base):
     )
     # 可重试失败继续保持 PENDING，该时间决定最早何时允许再次领取。
     next_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    # 发布者先领取短期投递租约，避免多个扫描器同时向 Broker 发送同一任务。
+    dispatch_claimed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )

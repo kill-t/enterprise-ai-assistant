@@ -186,6 +186,19 @@ def test_worker_retry_backoff_defaults_are_ordered() -> None:
     assert worker.summary_retry_max_delay_seconds == 300
 
 
+def test_worker_recovery_defaults_allow_task_hard_timeout_first() -> None:
+    """运行中任务恢复阈值必须晚于 Celery 硬超时，避免误判正常 Worker。"""
+    from app.core.config import WorkerSettings
+
+    worker = WorkerSettings()
+
+    assert worker.summary_running_timeout_seconds == 600
+    assert worker.summary_running_timeout_seconds > worker.task_time_limit_seconds
+    assert worker.summary_dispatch_lease_seconds >= (
+        worker.summary_recovery_interval_seconds
+    )
+
+
 def test_service_maps_required_content_overflow_to_business_error() -> None:
     """必选内容超限时，Service 应返回稳定错误码而不是泄露内部异常。"""
     service = object.__new__(ConversationService)

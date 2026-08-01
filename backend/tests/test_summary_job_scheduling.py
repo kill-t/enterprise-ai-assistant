@@ -91,6 +91,11 @@ def build_service(
         get_active_by_conversation_id=AsyncMock(return_value=active_job),
         create=AsyncMock(side_effect=lambda job: job),
         update=AsyncMock(side_effect=lambda job: job),
+        claim_dispatch=AsyncMock(
+            side_effect=lambda job_id, **kwargs: SimpleNamespace(id=job_id)
+        ),
+        mark_dispatched=AsyncMock(return_value=SimpleNamespace()),
+        release_dispatch_claim=AsyncMock(return_value=SimpleNamespace()),
     )
     service = ConversationSummaryJobService(
         db=db,
@@ -106,6 +111,7 @@ def build_service(
         summary_trigger_tokens=threshold,
         recent_history_budget_tokens=recent_budget,
         summary_batch_tokens=batch_budget,
+        dispatch_lease_seconds=120,
         token_counter_factory=lambda model_name: CharacterMessageCounter(),
     )
     return service, db, job_repository, event_log
@@ -154,10 +160,10 @@ def test_job_is_committed_before_it_is_dispatched() -> None:
     assert job.idempotency_key == (
         f"conversation-summary:{conversation.id}:{messages[-1].id}"
     )
-    assert events == ["commit", "dispatch", "commit"]
-    assert job.celery_task_id == str(job.id)
+    assert events == ["commit", "commit", "dispatch", "commit"]
     job_repository.create.assert_awaited_once_with(job)
-    job_repository.update.assert_awaited_once_with(job)
+    job_repository.claim_dispatch.assert_awaited_once()
+    job_repository.mark_dispatched.assert_awaited_once()
 
 
 def test_dispatch_failure_keeps_committed_pending_job() -> None:
@@ -182,8 +188,9 @@ def test_dispatch_failure_keeps_committed_pending_job() -> None:
     assert job is not None
     assert job.status == SummaryJobStatus.PENDING
     assert job.celery_task_id is None
-    assert events == ["commit", "dispatch"]
-    job_repository.update.assert_not_awaited()
+    assert events == ["commit", "commit", "dispatch", "commit"]
+    job_repository.mark_dispatched.assert_not_awaited()
+    job_repository.release_dispatch_claim.assert_awaited_once()
 
 
 def test_existing_undispatched_pending_job_is_dispatched_again() -> None:
@@ -207,9 +214,9 @@ def test_existing_undispatched_pending_job_is_dispatched_again() -> None:
     )
 
     assert result is active_job
-    assert active_job.celery_task_id == str(active_job.id)
-    assert events == ["dispatch", "commit"]
+    assert events == ["commit", "dispatch", "commit"]
     job_repository.create.assert_not_awaited()
+    job_repository.mark_dispatched.assert_awaited_once()
 
 
 def test_pending_retry_is_not_dispatched_before_next_retry_time() -> None:
@@ -233,7 +240,7 @@ def test_pending_retry_is_not_dispatched_before_next_retry_time() -> None:
 
     assert result is active_job
     assert events == []
-    job_repository.update.assert_not_awaited()
+    job_repository.claim_dispatch.assert_not_awaited()
 
 
 def test_existing_dispatched_or_running_job_is_not_dispatched_twice() -> None:

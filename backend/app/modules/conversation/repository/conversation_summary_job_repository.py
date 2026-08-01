@@ -64,7 +64,12 @@ class ConversationSummaryJobRepository:
         job_id: UUID,
         started_at: datetime,
     ) -> ConversationSummaryJobEntity | None:
-        """用一条条件 UPDATE 原子领取待处理任务，避免多个 Worker 重复执行。"""
+        """用一条条件 UPDATE 原子领取待处理任务，避免多个 Worker 重复执行。
+
+        这里故意保留 ``dispatch_claimed_at``：Worker 可能在发布方拿到 Broker
+        返回值之前就执行完成，保留租约可让发布方随后仍能回写 Celery task ID。
+        只有任务准备进入下一次重试时，才清除旧租约。
+        """
         statement = (
             update(ConversationSummaryJobEntity)
             .where(
@@ -146,6 +151,7 @@ class ConversationSummaryJobRepository:
                 next_retry_at=next_retry_at,
                 error_code=error_code,
                 error_message=error_message,
+                dispatch_claimed_at=None,
             )
             .returning(ConversationSummaryJobEntity)
         )
@@ -177,3 +183,183 @@ class ConversationSummaryJobRepository:
             .returning(ConversationSummaryJobEntity)
         )
         return await self.db.scalar(statement)
+
+    async def claim_dispatch(
+        self,
+        job_id: UUID,
+        claimed_at: datetime,
+        lease_expired_before: datetime,
+    ) -> ConversationSummaryJobEntity | None:
+        """原子领取到期 PENDING 的投递租约，旧租约超时后允许重新接管。"""
+        statement = (
+            update(ConversationSummaryJobEntity)
+            .where(
+                ConversationSummaryJobEntity.id == job_id,
+                ConversationSummaryJobEntity.status == SummaryJobStatus.PENDING,
+                (
+                    ConversationSummaryJobEntity.attempts
+                    < ConversationSummaryJobEntity.max_attempts
+                ),
+                or_(
+                    ConversationSummaryJobEntity.next_retry_at.is_(None),
+                    ConversationSummaryJobEntity.next_retry_at <= claimed_at,
+                ),
+                or_(
+                    ConversationSummaryJobEntity.dispatch_claimed_at.is_(None),
+                    (
+                        ConversationSummaryJobEntity.dispatch_claimed_at
+                        <= lease_expired_before
+                    ),
+                ),
+            )
+            .values(
+                dispatch_claimed_at=claimed_at,
+                celery_task_id=None,
+            )
+            .returning(ConversationSummaryJobEntity)
+        )
+        return await self.db.scalar(statement)
+
+    async def mark_dispatched(
+        self,
+        job_id: UUID,
+        claimed_at: datetime,
+        celery_task_id: str,
+    ) -> ConversationSummaryJobEntity | None:
+        """只允许当前投递租约记录 Broker 接受的 Celery task ID。"""
+        statement = (
+            update(ConversationSummaryJobEntity)
+            .where(
+                ConversationSummaryJobEntity.id == job_id,
+                ConversationSummaryJobEntity.dispatch_claimed_at == claimed_at,
+            )
+            .values(celery_task_id=celery_task_id)
+            .returning(ConversationSummaryJobEntity)
+        )
+        return await self.db.scalar(statement)
+
+    async def release_dispatch_claim(
+        self,
+        job_id: UUID,
+        claimed_at: datetime,
+    ) -> ConversationSummaryJobEntity | None:
+        """Broker 发布失败时释放当前租约，使后续请求或扫描能够重试。"""
+        statement = (
+            update(ConversationSummaryJobEntity)
+            .where(
+                ConversationSummaryJobEntity.id == job_id,
+                ConversationSummaryJobEntity.status == SummaryJobStatus.PENDING,
+                ConversationSummaryJobEntity.dispatch_claimed_at == claimed_at,
+                ConversationSummaryJobEntity.celery_task_id.is_(None),
+            )
+            .values(dispatch_claimed_at=None)
+            .returning(ConversationSummaryJobEntity)
+        )
+        return await self.db.scalar(statement)
+
+    async def list_due_dispatch_ids(
+        self,
+        now: datetime,
+        batch_size: int,
+    ) -> list[UUID]:
+        """按时间顺序返回到期 PENDING 的候选 ID，最终投递权仍需原子领取。"""
+        statement = (
+            select(ConversationSummaryJobEntity.id)
+            .where(
+                ConversationSummaryJobEntity.status == SummaryJobStatus.PENDING,
+                (
+                    ConversationSummaryJobEntity.attempts
+                    < ConversationSummaryJobEntity.max_attempts
+                ),
+                or_(
+                    ConversationSummaryJobEntity.next_retry_at.is_(None),
+                    ConversationSummaryJobEntity.next_retry_at <= now,
+                ),
+            )
+            .order_by(
+                ConversationSummaryJobEntity.next_retry_at.asc().nullsfirst(),
+                ConversationSummaryJobEntity.created_at,
+                ConversationSummaryJobEntity.id,
+            )
+            .limit(batch_size)
+        )
+        return list((await self.db.scalars(statement)).all())
+
+    async def fail_exhausted_stale_running(
+        self,
+        stale_before: datetime,
+        failed_at: datetime,
+        batch_size: int,
+    ) -> list[ConversationSummaryJobEntity]:
+        """把超时且次数耗尽的 RUNNING 批量标记为永久失败。"""
+        candidate_ids = (
+            select(ConversationSummaryJobEntity.id)
+            .where(
+                ConversationSummaryJobEntity.status == SummaryJobStatus.RUNNING,
+                ConversationSummaryJobEntity.started_at <= stale_before,
+                (
+                    ConversationSummaryJobEntity.attempts
+                    >= ConversationSummaryJobEntity.max_attempts
+                ),
+            )
+            .order_by(ConversationSummaryJobEntity.started_at)
+            .limit(batch_size)
+        )
+        statement = (
+            update(ConversationSummaryJobEntity)
+            .where(
+                ConversationSummaryJobEntity.id.in_(candidate_ids),
+                ConversationSummaryJobEntity.status == SummaryJobStatus.RUNNING,
+            )
+            .values(
+                status=SummaryJobStatus.FAILED,
+                finished_at=failed_at,
+                next_retry_at=None,
+                dispatch_claimed_at=None,
+                error_code="SUMMARY_WORKER_LOST_MAX_ATTEMPTS",
+                error_message="摘要任务执行进程中断且已达到最大次数",
+            )
+            .returning(ConversationSummaryJobEntity)
+        )
+        return list((await self.db.scalars(statement)).all())
+
+    async def requeue_stale_running(
+        self,
+        stale_before: datetime,
+        failed_at: datetime,
+        next_retry_at: datetime,
+        batch_size: int,
+    ) -> list[ConversationSummaryJobEntity]:
+        """把超时且仍有次数的 RUNNING 批量恢复为延迟 PENDING。"""
+        candidate_ids = (
+            select(ConversationSummaryJobEntity.id)
+            .where(
+                ConversationSummaryJobEntity.status == SummaryJobStatus.RUNNING,
+                ConversationSummaryJobEntity.started_at <= stale_before,
+                (
+                    ConversationSummaryJobEntity.attempts
+                    < ConversationSummaryJobEntity.max_attempts
+                ),
+            )
+            .order_by(ConversationSummaryJobEntity.started_at)
+            .limit(batch_size)
+        )
+        statement = (
+            update(ConversationSummaryJobEntity)
+            .where(
+                ConversationSummaryJobEntity.id.in_(candidate_ids),
+                ConversationSummaryJobEntity.status == SummaryJobStatus.RUNNING,
+            )
+            .values(
+                status=SummaryJobStatus.PENDING,
+                celery_task_id=None,
+                dispatch_claimed_at=None,
+                started_at=None,
+                finished_at=failed_at,
+                next_retry_at=next_retry_at,
+                error_code="SUMMARY_WORKER_LOST",
+                error_message="摘要任务执行进程中断，等待恢复",
+            )
+            .returning(ConversationSummaryJobEntity)
+        )
+        return list((await self.db.scalars(statement)).all())
