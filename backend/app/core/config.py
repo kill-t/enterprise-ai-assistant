@@ -65,12 +65,19 @@ class WorkerSettings(BaseModel):
     default_queue: str = "conversation-summary"
     task_soft_time_limit_seconds: int = Field(default=270, gt=0)
     task_time_limit_seconds: int = Field(default=300, gt=0)
+    summary_retry_base_delay_seconds: int = Field(default=30, gt=0)
+    summary_retry_max_delay_seconds: int = Field(default=300, gt=0)
 
     @model_validator(mode="after")
     def validate_time_limits(self) -> "WorkerSettings":
         """保证软超时早于硬超时，使任务有机会保存失败状态。"""
         if self.task_soft_time_limit_seconds >= self.task_time_limit_seconds:
             raise ValueError("Worker 软超时必须小于硬超时")
+        if (
+            self.summary_retry_base_delay_seconds
+            > self.summary_retry_max_delay_seconds
+        ):
+            raise ValueError("摘要重试基础延迟不能大于最大退避时间")
         return self
 
 

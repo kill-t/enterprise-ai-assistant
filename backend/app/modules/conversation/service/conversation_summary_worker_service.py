@@ -15,6 +15,9 @@ from app.modules.conversation.service.conversation_summary_processor import (
     GeneratedConversationSummary,
     PreparedConversationSummary,
 )
+from app.modules.conversation.service.summary_failure_policy import (
+    SummaryFailurePolicy,
+)
 
 
 class ConversationSummaryProcessor(Protocol):
@@ -51,11 +54,13 @@ class ConversationSummaryWorkerService:
         db: AsyncSession,
         job_repository: ConversationSummaryJobRepository,
         processor: ConversationSummaryProcessor,
+        failure_policy: SummaryFailurePolicy | None = None,
     ) -> None:
         """注入数据库、任务仓库和可替换的业务处理器。"""
         self.db = db
         self.job_repository = job_repository
         self.processor = processor
+        self.failure_policy = failure_policy or SummaryFailurePolicy()
 
     async def execute(self, job_id: UUID) -> str:
         """原子领取并执行任务，返回便于日志和测试判断的稳定结果。"""
@@ -94,12 +99,43 @@ class ConversationSummaryWorkerService:
             )
             # 真实处理器以后会在同一 Session 中写摘要；失败时先清除所有半成品修改。
             await self.db.rollback()
+            failed_at = datetime.now(timezone.utc)
+            decision = self.failure_policy.classify(exc)
+            if decision.retryable and attempts < claimed_job.max_attempts:
+                next_retry_at = self.failure_policy.next_retry_at(
+                    attempts=attempts,
+                    now=failed_at,
+                )
+                retry_job = await self.job_repository.mark_retry_pending(
+                    job_id=job_id,
+                    expected_attempts=attempts,
+                    failed_at=failed_at,
+                    next_retry_at=next_retry_at,
+                    error_code=decision.error_code,
+                    error_message=decision.error_message,
+                )
+                await self._commit()
+                if retry_job is None:
+                    app_logger.warning(
+                        "摘要任务重试结果已过期 job_id=%s attempts=%s",
+                        job_id,
+                        attempts,
+                    )
+                    return "stale"
+                app_logger.warning(
+                    "摘要任务已安排延迟重试 job_id=%s attempts=%s next_retry_at=%s",
+                    job_id,
+                    attempts,
+                    next_retry_at,
+                )
+                return "retry_scheduled"
+
             failed_job = await self.job_repository.mark_failed(
                 job_id=job_id,
                 expected_attempts=attempts,
-                finished_at=datetime.now(timezone.utc),
-                error_code="SUMMARY_PROCESSING_FAILED",
-                error_message="会话摘要任务处理失败",
+                finished_at=failed_at,
+                error_code=decision.error_code,
+                error_message=decision.error_message,
             )
             await self._commit()
             if failed_job is None:

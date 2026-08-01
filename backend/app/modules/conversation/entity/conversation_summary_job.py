@@ -44,6 +44,11 @@ class ConversationSummaryJobEntity(Base):
             unique=True,
             postgresql_where=text("status IN ('PENDING', 'RUNNING')"),
         ),
+        Index(
+            "ix_conversation_summary_jobs_retry_due",
+            "status",
+            "next_retry_at",
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
@@ -82,6 +87,11 @@ class ConversationSummaryJobEntity(Base):
         nullable=True,
     )
     finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    # 可重试失败继续保持 PENDING，该时间决定最早何时允许再次领取。
+    next_retry_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )

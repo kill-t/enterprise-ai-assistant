@@ -2,6 +2,7 @@ import asyncio
 from uuid import UUID
 
 from app.core.loggers import app_logger
+from app.core.config import settings
 from app.infrastructure.database.session import SessionLocal, engine
 from app.infrastructure.llm.provider_factory import ProviderFactory
 from app.infrastructure.task_queue.celery_app import celery_app
@@ -17,6 +18,9 @@ from app.modules.conversation.service.conversation_summary_processor import (
 )
 from app.modules.conversation.service.conversation_summary_worker_service import (
     ConversationSummaryWorkerService,
+)
+from app.modules.conversation.service.summary_failure_policy import (
+    SummaryFailurePolicy,
 )
 
 
@@ -37,6 +41,14 @@ async def _execute_summary_job(job_id: UUID) -> str:
                 db=db,
                 job_repository=repository,
                 processor=processor,
+                failure_policy=SummaryFailurePolicy(
+                    base_delay_seconds=(
+                        settings.worker.summary_retry_base_delay_seconds
+                    ),
+                    max_delay_seconds=(
+                        settings.worker.summary_retry_max_delay_seconds
+                    ),
+                ),
             )
             return await service.execute(job_id)
     finally:

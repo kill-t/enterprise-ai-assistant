@@ -12,6 +12,9 @@ from app.modules.conversation.repository.conversation_summary_job_repository imp
 from app.modules.conversation.service.conversation_summary_worker_service import (
     ConversationSummaryWorkerService,
 )
+from app.modules.conversation.service.summary_failure_policy import (
+    SummaryFailurePolicy,
+)
 
 
 class SuccessfulProcessor:
@@ -52,6 +55,14 @@ class FailingProcessor:
         raise AssertionError("生成失败后不应持久化")
 
 
+class TimeoutProcessor(FailingProcessor):
+    """模拟可通过稍后重试恢复的模型超时。"""
+
+    async def generate(self, prepared):
+        """抛出内置超时异常，触发延迟重试策略。"""
+        raise TimeoutError("模拟模型超时")
+
+
 class RecordingDatabase:
     """记录 Worker 事务结束次数。"""
 
@@ -69,12 +80,13 @@ class RecordingDatabase:
         self.rollbacks += 1
 
 
-def build_claimed_job(attempts: int = 1):
+def build_claimed_job(attempts: int = 1, max_attempts: int = 3):
     """创建已经原子领取为 RUNNING 的任务替身。"""
     return SimpleNamespace(
         id=uuid4(),
         status=SummaryJobStatus.RUNNING,
         attempts=attempts,
+        max_attempts=max_attempts,
     )
 
 
@@ -95,7 +107,33 @@ def test_repository_claim_is_single_atomic_conditional_update() -> None:
     assert "conversation_summary_jobs.id" in statement
     assert "conversation_summary_jobs.status" in statement
     assert "conversation_summary_jobs.attempts < conversation_summary_jobs.max_attempts" in statement
+    assert "conversation_summary_jobs.next_retry_at" in statement
     assert "attempts=(conversation_summary_jobs.attempts +" in statement
+
+
+def test_repository_retry_returns_running_job_to_due_pending() -> None:
+    """可重试失败必须按 attempts 原子恢复 PENDING，并保存下一次执行时间。"""
+    pending_job = SimpleNamespace(status=SummaryJobStatus.PENDING)
+    db = SimpleNamespace(scalar=AsyncMock(return_value=pending_job))
+    repository = ConversationSummaryJobRepository(db)
+    now = datetime.now(timezone.utc)
+
+    result = asyncio.run(
+        repository.mark_retry_pending(
+            job_id=uuid4(),
+            expected_attempts=1,
+            failed_at=now,
+            next_retry_at=now,
+            error_code="SUMMARY_PROVIDER_TIMEOUT",
+            error_message="摘要模型调用超时",
+        )
+    )
+    statement = str(db.scalar.await_args.args[0])
+
+    assert result is pending_job
+    assert "conversation_summary_jobs.status" in statement
+    assert "conversation_summary_jobs.attempts" in statement
+    assert "conversation_summary_jobs.next_retry_at" in statement
 
 
 def test_repository_completion_checks_attempt_version() -> None:
@@ -177,11 +215,69 @@ def test_processor_failure_is_persisted_without_leaking_raw_error() -> None:
     repository.mark_failed.assert_awaited_once()
     failure_args = repository.mark_failed.await_args.kwargs
     assert failure_args["expected_attempts"] == 1
-    assert failure_args["error_code"] == "SUMMARY_PROCESSING_FAILED"
+    assert failure_args["error_code"] == "SUMMARY_UNEXPECTED_ERROR"
     assert failure_args["error_message"] == "会话摘要任务处理失败"
     assert "模拟摘要生成失败" not in failure_args["error_message"]
     assert db.commits == 3
     assert db.rollbacks == 1
+
+
+def test_retryable_timeout_is_scheduled_with_backoff() -> None:
+    """模型超时且次数未耗尽时应回到 PENDING，而不是直接永久失败。"""
+    job = build_claimed_job(attempts=1, max_attempts=3)
+    db = RecordingDatabase()
+    repository = SimpleNamespace(
+        claim_pending=AsyncMock(return_value=job),
+        mark_succeeded=AsyncMock(),
+        mark_failed=AsyncMock(),
+        mark_retry_pending=AsyncMock(
+            return_value=SimpleNamespace(status=SummaryJobStatus.PENDING)
+        ),
+    )
+    service = ConversationSummaryWorkerService(
+        db,
+        repository,
+        TimeoutProcessor(),
+        failure_policy=SummaryFailurePolicy(
+            base_delay_seconds=30,
+            max_delay_seconds=300,
+        ),
+    )
+
+    result = asyncio.run(service.execute(job.id))
+
+    assert result == "retry_scheduled"
+    repository.mark_failed.assert_not_awaited()
+    repository.mark_retry_pending.assert_awaited_once()
+    retry_args = repository.mark_retry_pending.await_args.kwargs
+    assert retry_args["error_code"] == "SUMMARY_PROVIDER_TIMEOUT"
+    assert retry_args["error_message"] == "摘要模型调用超时"
+    assert retry_args["next_retry_at"] > retry_args["failed_at"]
+
+
+def test_retryable_failure_becomes_terminal_after_max_attempts() -> None:
+    """最后一次执行仍超时时必须进入 FAILED，不能无限重试。"""
+    job = build_claimed_job(attempts=3, max_attempts=3)
+    db = RecordingDatabase()
+    repository = SimpleNamespace(
+        claim_pending=AsyncMock(return_value=job),
+        mark_succeeded=AsyncMock(),
+        mark_retry_pending=AsyncMock(),
+        mark_failed=AsyncMock(
+            return_value=SimpleNamespace(status=SummaryJobStatus.FAILED)
+        ),
+    )
+    service = ConversationSummaryWorkerService(
+        db,
+        repository,
+        TimeoutProcessor(),
+    )
+
+    result = asyncio.run(service.execute(job.id))
+
+    assert result == "failed"
+    repository.mark_retry_pending.assert_not_awaited()
+    repository.mark_failed.assert_awaited_once()
 
 
 def test_stale_worker_cannot_report_success_for_newer_attempt() -> None:

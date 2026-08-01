@@ -46,6 +46,7 @@ def test_summary_job_freezes_target_and_has_database_constraints() -> None:
     assert table.c.target_message_id.nullable is True
     assert table.c.target_created_at.nullable is False
     assert table.c.idempotency_key.nullable is False
+    assert table.c.next_retry_at.nullable is True
     assert any(
         constraint.name == "uq_conversation_summary_jobs_idempotency_key"
         for constraint in table.constraints
@@ -163,3 +164,14 @@ def test_summary_job_migration_follows_current_head() -> None:
     assert '"uq_conversation_summary_jobs_active_conversation"' in migration
     assert 'postgresql_where=sa.text("status IN (\'PENDING\', \'RUNNING\')")' in migration
     assert "summary_job_status.create" not in migration
+
+
+def test_summary_retry_migration_adds_next_retry_cursor() -> None:
+    """延迟重试迁移必须接在任务表之后，并支持完整降级删除。"""
+    migration = Path(
+        "migrations/versions/f7a9c2d4e681_add_summary_job_retry_schedule.py"
+    ).read_text(encoding="utf-8")
+
+    assert 'down_revision: Union[str, Sequence[str], None] = "e3b1c8a46f72"' in migration
+    assert '"next_retry_at"' in migration
+    assert 'op.drop_column("conversation_summary_jobs", "next_retry_at")' in migration

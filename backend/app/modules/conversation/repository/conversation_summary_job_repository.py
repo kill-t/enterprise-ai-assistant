@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.enums import SummaryJobStatus
@@ -74,6 +74,10 @@ class ConversationSummaryJobRepository:
                     ConversationSummaryJobEntity.attempts
                     < ConversationSummaryJobEntity.max_attempts
                 ),
+                or_(
+                    ConversationSummaryJobEntity.next_retry_at.is_(None),
+                    ConversationSummaryJobEntity.next_retry_at <= started_at,
+                ),
             )
             .values(
                 status=SummaryJobStatus.RUNNING,
@@ -82,6 +86,7 @@ class ConversationSummaryJobRepository:
                 finished_at=None,
                 error_code=None,
                 error_message=None,
+                next_retry_at=None,
             )
             .returning(ConversationSummaryJobEntity)
         )
@@ -106,6 +111,41 @@ class ConversationSummaryJobRepository:
                 finished_at=finished_at,
                 error_code=None,
                 error_message=None,
+                next_retry_at=None,
+            )
+            .returning(ConversationSummaryJobEntity)
+        )
+        return await self.db.scalar(statement)
+
+    async def mark_retry_pending(
+        self,
+        job_id: UUID,
+        expected_attempts: int,
+        failed_at: datetime,
+        next_retry_at: datetime,
+        error_code: str,
+        error_message: str,
+    ) -> ConversationSummaryJobEntity | None:
+        """把可重试失败原子恢复为延迟 PENDING，并清除上次投递标记。"""
+        statement = (
+            update(ConversationSummaryJobEntity)
+            .where(
+                ConversationSummaryJobEntity.id == job_id,
+                ConversationSummaryJobEntity.status == SummaryJobStatus.RUNNING,
+                ConversationSummaryJobEntity.attempts == expected_attempts,
+                (
+                    ConversationSummaryJobEntity.attempts
+                    < ConversationSummaryJobEntity.max_attempts
+                ),
+            )
+            .values(
+                status=SummaryJobStatus.PENDING,
+                celery_task_id=None,
+                started_at=None,
+                finished_at=failed_at,
+                next_retry_at=next_retry_at,
+                error_code=error_code,
+                error_message=error_message,
             )
             .returning(ConversationSummaryJobEntity)
         )
@@ -132,6 +172,7 @@ class ConversationSummaryJobRepository:
                 finished_at=finished_at,
                 error_code=error_code,
                 error_message=error_message,
+                next_retry_at=None,
             )
             .returning(ConversationSummaryJobEntity)
         )

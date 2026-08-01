@@ -176,6 +176,16 @@ def test_summary_batch_budget_is_documented_in_environment_template() -> None:
     assert "CONVERSATION_MEMORY__SUMMARY_BATCH_TOKENS=4000" in environment_template
 
 
+def test_worker_retry_backoff_defaults_are_ordered() -> None:
+    """摘要重试基础延迟必须小于等于最大退避，避免无效配置。"""
+    from app.core.config import WorkerSettings
+
+    worker = WorkerSettings()
+
+    assert worker.summary_retry_base_delay_seconds == 30
+    assert worker.summary_retry_max_delay_seconds == 300
+
+
 def test_service_maps_required_content_overflow_to_business_error() -> None:
     """必选内容超限时，Service 应返回稳定错误码而不是泄露内部异常。"""
     service = object.__new__(ConversationService)

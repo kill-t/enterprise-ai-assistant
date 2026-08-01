@@ -212,6 +212,30 @@ def test_existing_undispatched_pending_job_is_dispatched_again() -> None:
     job_repository.create.assert_not_awaited()
 
 
+def test_pending_retry_is_not_dispatched_before_next_retry_time() -> None:
+    """尚未到期的 PENDING 重试任务不能被新聊天请求提前投递。"""
+    events: list[str] = []
+    active_job = SimpleNamespace(
+        id=uuid4(),
+        status=SummaryJobStatus.PENDING,
+        celery_task_id=None,
+        next_retry_at=datetime.now(timezone.utc).replace(year=2099),
+    )
+    service, _, job_repository, _ = build_service(
+        [],
+        active_job=active_job,
+        events=events,
+    )
+
+    result = asyncio.run(
+        service.maybe_schedule(SimpleNamespace(id=uuid4(), model_name="mock"))
+    )
+
+    assert result is active_job
+    assert events == []
+    job_repository.update.assert_not_awaited()
+
+
 def test_existing_dispatched_or_running_job_is_not_dispatched_twice() -> None:
     """已经投递或运行中的活动任务不应因新消息再次投递。"""
     for active_job in (

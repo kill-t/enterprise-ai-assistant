@@ -1,4 +1,5 @@
 from collections.abc import Callable
+from datetime import datetime, timezone
 from uuid import UUID, uuid4
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -224,6 +225,9 @@ class ConversationSummaryJobService:
             job.status != SummaryJobStatus.PENDING
             or job.celery_task_id is not None
         ):
+            return
+        next_retry_at = getattr(job, "next_retry_at", None)
+        if next_retry_at is not None and next_retry_at > datetime.now(timezone.utc):
             return
 
         try:
