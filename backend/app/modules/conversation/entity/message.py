@@ -7,10 +7,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.database.base import Base
 from app.common.enums import MessageRole, MessageStatus
-from typing import TYPE_CHECKING
-
-if TYPE_CHECKING:
-    from .conversation import ConversationEntity
+from .conversation import ConversationEntity
 
 
 class MessageEntity(Base):

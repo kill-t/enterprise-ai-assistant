@@ -89,3 +89,45 @@ class MessageRepository:
             .order_by(MessageEntity.created_at, MessageEntity.id)
         )
         return list((await self.db.scalars(statement)).all())
+
+    async def list_completed_in_summary_range(
+        self,
+        conversation_id: UUID,
+        through_created_at: datetime,
+        through_message_id: UUID,
+        after_created_at: datetime | None = None,
+        after_message_id: UUID | None = None,
+    ) -> list[MessageEntity]:
+        """读取旧摘要游标之后、任务冻结目标之前的已完成消息。"""
+        conditions = [
+            MessageEntity.conversation_id == conversation_id,
+            MessageEntity.status == MessageStatus.COMPLETED,
+            or_(
+                MessageEntity.created_at < through_created_at,
+                and_(
+                    MessageEntity.created_at == through_created_at,
+                    MessageEntity.id <= through_message_id,
+                ),
+            ),
+        ]
+
+        if after_created_at is not None:
+            if after_message_id is None:
+                # 旧游标消息被删除时宁可重复同一时刻的数据，也不能静默遗漏。
+                lower_bound = MessageEntity.created_at >= after_created_at
+            else:
+                lower_bound = or_(
+                    MessageEntity.created_at > after_created_at,
+                    and_(
+                        MessageEntity.created_at == after_created_at,
+                        MessageEntity.id > after_message_id,
+                    ),
+                )
+            conditions.append(lower_bound)
+
+        statement = (
+            select(MessageEntity)
+            .where(*conditions)
+            .order_by(MessageEntity.created_at, MessageEntity.id)
+        )
+        return list((await self.db.scalars(statement)).all())

@@ -79,6 +79,7 @@ def build_service(
     *,
     active_job=None,
     threshold: int = 10,
+    recent_budget: int = 4,
     dispatcher=None,
     events: list[str] | None = None,
 ):
@@ -102,6 +103,7 @@ def build_service(
         job_repository=job_repository,
         dispatcher=dispatcher or RecordingDispatcher(event_log),
         summary_trigger_tokens=threshold,
+        recent_history_budget_tokens=recent_budget,
         token_counter_factory=lambda model_name: CharacterMessageCounter(),
     )
     return service, db, job_repository, event_log
@@ -252,6 +254,30 @@ def test_only_messages_through_latest_assistant_are_frozen() -> None:
 
     assert job is not None
     assert job.target_message_id == assistant.id
+
+
+def test_summary_target_leaves_recent_complete_turns_uncovered() -> None:
+    """摘要任务只冻结旧前缀，最近完整轮次应继续以原文进入后续上下文。"""
+    messages = [
+        build_message(MessageRole.USER, "问一"),
+        build_message(MessageRole.ASSISTANT, "答一"),
+        build_message(MessageRole.USER, "问二"),
+        build_message(MessageRole.ASSISTANT, "答二"),
+        build_message(MessageRole.USER, "问三"),
+        build_message(MessageRole.ASSISTANT, "答三"),
+    ]
+    service, _, _, _ = build_service(
+        messages,
+        threshold=8,
+        recent_budget=4,
+    )
+
+    job = asyncio.run(
+        service.maybe_schedule(SimpleNamespace(id=uuid4(), model_name="mock"))
+    )
+
+    assert job is not None
+    assert job.target_message_id == messages[3].id
 
 
 def test_celery_dispatcher_sends_only_job_id_with_deterministic_task_id() -> None:

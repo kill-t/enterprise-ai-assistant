@@ -5,7 +5,11 @@ from openai import AsyncOpenAI
 from app.core.loggers import llm_logger
 from app.core.config import settings
 from app.infrastructure.llm.base import BaseChatProvider
-from app.infrastructure.llm.schemas import ChatRequest, ChatResponse
+from app.infrastructure.llm.schemas import (
+    ChatRequest,
+    ChatResponse,
+    ChatResponseFormat,
+)
 
 
 class DeepSeekProvider(BaseChatProvider):
@@ -28,12 +32,18 @@ class DeepSeekProvider(BaseChatProvider):
         """异步执行非流式模型调用，并记录 token 与调用耗时。"""
         start = time.perf_counter()
 
-        response = await self.client.chat.completions.create(
-            model=settings.deepseek.model,
-            messages=self._build_messages(request),
-            temperature=request.temperature,
-            stream=False,
-        )
+        request_options = {
+            "model": settings.deepseek.model,
+            "messages": self._build_messages(request),
+            "temperature": request.temperature,
+            "max_tokens": settings.deepseek.max_output_tokens,
+            "stream": False,
+        }
+        if request.response_format == ChatResponseFormat.JSON_OBJECT:
+            # DeepSeek JSON Output 需要同时传递 response_format，并在 Prompt 中明确要求 JSON。
+            request_options["response_format"] = {"type": "json_object"}
+
+        response = await self.client.chat.completions.create(**request_options)
 
         elapsed = time.perf_counter() - start
         llm_logger.info(

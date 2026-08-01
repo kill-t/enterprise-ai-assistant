@@ -82,6 +82,9 @@ class ConversationService:
             summary_trigger_tokens=(
                 settings.conversation_memory.summary_trigger_tokens
             ),
+            recent_history_budget_tokens=(
+                settings.conversation_memory.recent_history_budget_tokens
+            ),
         )
 
     async def create(

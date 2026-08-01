@@ -20,18 +20,36 @@ class SuccessfulProcessor:
     def __init__(self) -> None:
         """初始化处理记录。"""
         self.jobs = []
+        self.persisted_results = []
 
-    async def process(self, job) -> None:
-        """记录当前获得执行权的任务。"""
+    async def prepare(self, job):
+        """记录任务并模拟数据库读取阶段。"""
         self.jobs.append(job)
+        return SimpleNamespace(job=job)
+
+    async def generate(self, prepared):
+        """模拟不占数据库事务的模型生成阶段。"""
+        return SimpleNamespace(content="摘要结果")
+
+    async def persist(self, prepared, generated) -> None:
+        """记录等待最终事务提交的摘要结果。"""
+        self.persisted_results.append((prepared, generated))
 
 
 class FailingProcessor:
     """模拟摘要处理逻辑失败。"""
 
-    async def process(self, job) -> None:
-        """抛出固定异常，验证失败状态持久化。"""
+    async def prepare(self, job):
+        """模拟数据库读取成功。"""
+        return SimpleNamespace(job=job)
+
+    async def generate(self, prepared):
+        """在模型生成阶段抛出固定异常。"""
         raise RuntimeError("模拟摘要生成失败")
+
+    async def persist(self, prepared, generated) -> None:
+        """生成失败后不应调用持久化阶段。"""
+        raise AssertionError("生成失败后不应持久化")
 
 
 class RecordingDatabase:
@@ -135,7 +153,8 @@ def test_claimed_job_is_processed_and_marked_succeeded() -> None:
     repository.mark_succeeded.assert_awaited_once()
     assert repository.mark_succeeded.await_args.kwargs["expected_attempts"] == 2
     repository.mark_failed.assert_not_awaited()
-    assert db.commits == 2
+    assert len(processor.persisted_results) == 1
+    assert db.commits == 3
 
 
 def test_processor_failure_is_persisted_without_leaking_raw_error() -> None:
@@ -161,12 +180,12 @@ def test_processor_failure_is_persisted_without_leaking_raw_error() -> None:
     assert failure_args["error_code"] == "SUMMARY_PROCESSING_FAILED"
     assert failure_args["error_message"] == "会话摘要任务处理失败"
     assert "模拟摘要生成失败" not in failure_args["error_message"]
-    assert db.commits == 2
+    assert db.commits == 3
     assert db.rollbacks == 1
 
 
 def test_stale_worker_cannot_report_success_for_newer_attempt() -> None:
-    """attempts 不匹配时完成更新返回 None，旧 Worker 只能结束不能覆盖新状态。"""
+    """attempts 不匹配时必须回滚旧 Worker 产生的摘要半成品。"""
     job = build_claimed_job(attempts=1)
     db = RecordingDatabase()
     repository = SimpleNamespace(
@@ -184,6 +203,7 @@ def test_stale_worker_cannot_report_success_for_newer_attempt() -> None:
 
     assert result == "stale"
     assert db.commits == 2
+    assert db.rollbacks == 1
 
 
 def test_celery_app_registers_summary_job_task() -> None:

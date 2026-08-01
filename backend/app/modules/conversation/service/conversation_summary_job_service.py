@@ -34,6 +34,7 @@ class ConversationSummaryJobService:
         job_repository: ConversationSummaryJobRepository,
         dispatcher: SummaryJobDispatcher,
         summary_trigger_tokens: int,
+        recent_history_budget_tokens: int = 2000,
         token_counter_factory: Callable[[str], MessageTokenCounter] = TokenCounter,
     ) -> None:
         """组装任务判断所需的数据库、投递器、阈值和 token 计数器。"""
@@ -43,6 +44,7 @@ class ConversationSummaryJobService:
         self.job_repository = job_repository
         self.dispatcher = dispatcher
         self.summary_trigger_tokens = summary_trigger_tokens
+        self.recent_history_budget_tokens = recent_history_budget_tokens
         self.token_counter_factory = token_counter_factory
 
     async def maybe_schedule(
@@ -75,7 +77,11 @@ class ConversationSummaryJobService:
         if token_count <= self.summary_trigger_tokens:
             return None
 
-        target_message = messages[-1]
+        messages_to_summarize = self._select_summary_prefix(messages, counter)
+        if not messages_to_summarize:
+            return None
+
+        target_message = messages_to_summarize[-1]
         job = ConversationSummaryJobEntity(
             id=uuid4(),
             conversation_id=conversation.id,
@@ -131,6 +137,57 @@ class ConversationSummaryJobService:
         if latest_assistant_index is None:
             return []
         return messages[: latest_assistant_index + 1]
+
+    def _select_summary_prefix(
+        self,
+        messages: list[MessageEntity],
+        counter: MessageTokenCounter,
+    ) -> list[MessageEntity]:
+        """选择需要压缩的旧完整轮次，并为近期历史保留原文预算。"""
+        turns = self._group_complete_turns(messages)
+        retained_tokens = 0
+        retained_start = len(turns)
+
+        # 从最新轮次向前保留原文；第一个超出预算的轮次及其更早历史进入摘要。
+        for index in range(len(turns) - 1, -1, -1):
+            turn = turns[index]
+            turn_tokens = counter.count_messages(
+                [
+                    ChatMessage(
+                        role=ChatRole(message.role.value),
+                        content=message.content,
+                    )
+                    for message in turn
+                ]
+            )
+            if retained_tokens + turn_tokens > self.recent_history_budget_tokens:
+                break
+            retained_tokens += turn_tokens
+            retained_start = index
+
+        return [message for turn in turns[:retained_start] for message in turn]
+
+    @staticmethod
+    def _group_complete_turns(
+        messages: list[MessageEntity],
+    ) -> list[list[MessageEntity]]:
+        """把消息整理成以用户开始、以助手结束的完整问答轮次。"""
+        turns: list[list[MessageEntity]] = []
+        current_turn: list[MessageEntity] = []
+
+        for message in messages:
+            if message.role == MessageRole.USER:
+                if current_turn and current_turn[-1].role == MessageRole.ASSISTANT:
+                    turns.append(current_turn)
+                current_turn = [message]
+                continue
+
+            if current_turn:
+                current_turn.append(message)
+
+        if current_turn and current_turn[-1].role == MessageRole.ASSISTANT:
+            turns.append(current_turn)
+        return turns
 
     async def _dispatch_if_needed(
         self,

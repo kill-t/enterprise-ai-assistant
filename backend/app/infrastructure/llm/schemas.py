@@ -1,5 +1,5 @@
 from enum import Enum
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ChatRole(str, Enum):
@@ -13,6 +13,13 @@ class ChatRole(str, Enum):
     ASSISTANT = "assistant"
 
     TOOL = "tool"
+
+
+class ChatResponseFormat(str, Enum):
+    """约束 Provider 返回普通文本或合法 JSON 对象。"""
+
+    TEXT = "text"
+    JSON_OBJECT = "json_object"
 
 
 class ChatMessage(BaseModel):
@@ -36,7 +43,9 @@ class ChatRequest(BaseModel):
 
     model: str | None = None
 
-    metadata: dict[str, str] = {}
+    response_format: ChatResponseFormat = ChatResponseFormat.TEXT
+
+    metadata: dict[str, str] = Field(default_factory=dict)
 
 
 class ChatResponse(BaseModel):

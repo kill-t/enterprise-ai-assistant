@@ -3,15 +3,20 @@ from uuid import UUID
 
 from app.core.loggers import app_logger
 from app.infrastructure.database.session import SessionLocal, engine
+from app.infrastructure.llm.provider_factory import ProviderFactory
 from app.infrastructure.task_queue.celery_app import celery_app
 from app.modules.conversation.repository.conversation_summary_job_repository import (
     ConversationSummaryJobRepository,
 )
+from app.modules.conversation.repository.conversation_summary_repository import (
+    ConversationSummaryRepository,
+)
+from app.modules.conversation.repository.message_repository import MessageRepository
+from app.modules.conversation.service.conversation_summary_processor import (
+    RollingConversationSummaryProcessor,
+)
 from app.modules.conversation.service.conversation_summary_worker_service import (
     ConversationSummaryWorkerService,
-)
-from app.modules.conversation.service.deferred_summary_processor import (
-    DeferredConversationSummaryProcessor,
 )
 
 
@@ -20,10 +25,15 @@ async def _execute_summary_job(job_id: UUID) -> str:
     try:
         async with SessionLocal() as db:
             repository = ConversationSummaryJobRepository(db)
+            processor = RollingConversationSummaryProcessor(
+                message_repository=MessageRepository(db),
+                summary_repository=ConversationSummaryRepository(db),
+                provider=ProviderFactory.create(),
+            )
             service = ConversationSummaryWorkerService(
                 db=db,
                 job_repository=repository,
-                processor=DeferredConversationSummaryProcessor(),
+                processor=processor,
             )
             return await service.execute(job_id)
     finally:
