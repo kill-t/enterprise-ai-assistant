@@ -10,7 +10,9 @@ import HomeView from "@/views/HomeView.vue";
 
 vi.mock("@/api/conversations", () => ({
   createConversation: vi.fn(),
+  deleteConversation: vi.fn(),
   listConversations: vi.fn(),
+  updateConversation: vi.fn(),
 }));
 
 const conversation: ConversationResponse = {
@@ -22,6 +24,13 @@ const conversation: ConversationResponse = {
   is_archived: false,
   created_at: "2026-08-08T00:00:00Z",
   updated_at: "2026-08-08T00:00:00Z",
+};
+
+const archivedConversation: ConversationResponse = {
+  ...conversation,
+  id: "conversation-2",
+  title: "已归档会议记录",
+  is_archived: true,
 };
 
 /** 挂载工作台，并提供真实 Pinia Store 与最小 Router 环境。 */
@@ -155,5 +164,110 @@ describe("HomeView", () => {
     expect(wrapper.get('[data-test="conversation-list"]').text()).toContain(
       "项目会议准备",
     );
+  });
+
+  it("可在重命名对话框中提交新标题，并立即看到后端确认后的结果", async () => {
+    const renamedConversation: ConversationResponse = {
+      ...conversation,
+      title: "项目会议简报",
+    };
+    vi.mocked(conversationsApi.listConversations).mockResolvedValue([
+      conversation,
+    ]);
+    vi.mocked(conversationsApi.updateConversation).mockResolvedValue(
+      renamedConversation,
+    );
+
+    const { wrapper } = await mountHomeView();
+    await flushPromises();
+    await wrapper
+      .get('[data-test="rename-conversation-conversation-1"]')
+      .trigger("click");
+
+    expect(wrapper.get('[data-test="rename-dialog"]').text()).toContain(
+      "重命名会话",
+    );
+    await wrapper.get('[data-test="rename-input"]').setValue(" 项目会议简报 ");
+    await wrapper.get('[data-test="rename-dialog"] form').trigger("submit");
+    await flushPromises();
+
+    expect(conversationsApi.updateConversation).toHaveBeenCalledWith(
+      "access-token",
+      "conversation-1",
+      { title: "项目会议简报" },
+    );
+    expect(wrapper.text()).toContain("项目会议简报");
+    expect(wrapper.find('[data-test="rename-dialog"]').exists()).toBe(false);
+  });
+
+  it("归档会话后从默认列表移除该会话", async () => {
+    vi.mocked(conversationsApi.listConversations).mockResolvedValue([
+      conversation,
+    ]);
+    vi.mocked(conversationsApi.updateConversation).mockResolvedValue({
+      ...conversation,
+      is_archived: true,
+    });
+
+    const { wrapper } = await mountHomeView();
+    await flushPromises();
+    await wrapper
+      .get('[data-test="archive-conversation-conversation-1"]')
+      .trigger("click");
+    await flushPromises();
+
+    expect(conversationsApi.updateConversation).toHaveBeenCalledWith(
+      "access-token",
+      "conversation-1",
+      { is_archived: true },
+    );
+    expect(wrapper.get('[data-test="empty-state"]').text()).toContain(
+      "还没有会话",
+    );
+  });
+
+  it("删除会先显示确认框，确认后才调用删除接口", async () => {
+    vi.mocked(conversationsApi.listConversations).mockResolvedValue([
+      conversation,
+    ]);
+    vi.mocked(conversationsApi.deleteConversation).mockResolvedValue();
+
+    const { wrapper } = await mountHomeView();
+    await flushPromises();
+    await wrapper
+      .get('[data-test="delete-conversation-conversation-1"]')
+      .trigger("click");
+
+    expect(wrapper.get('[data-test="delete-dialog"]').text()).toContain(
+      "删除会话",
+    );
+    expect(conversationsApi.deleteConversation).not.toHaveBeenCalled();
+
+    await wrapper.get('[data-test="confirm-delete"]').trigger("click");
+    await flushPromises();
+
+    expect(conversationsApi.deleteConversation).toHaveBeenCalledWith(
+      "access-token",
+      "conversation-1",
+    );
+    expect(wrapper.find('[data-test="empty-state"]').exists()).toBe(true);
+    expect(wrapper.find('[data-test="delete-dialog"]').exists()).toBe(false);
+  });
+
+  it("可切换到包含归档会话的列表，并展示归档标记", async () => {
+    vi.mocked(conversationsApi.listConversations)
+      .mockResolvedValueOnce([conversation])
+      .mockResolvedValueOnce([conversation, archivedConversation]);
+
+    const { wrapper } = await mountHomeView();
+    await flushPromises();
+    await wrapper.get('[data-test="toggle-archived"]').trigger("click");
+    await flushPromises();
+
+    expect(conversationsApi.listConversations).toHaveBeenLastCalledWith(
+      "access-token",
+      { includeArchived: true },
+    );
+    expect(wrapper.get('[data-test="archived-badge"]').text()).toBe("已归档");
   });
 });

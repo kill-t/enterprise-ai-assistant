@@ -39,3 +39,4 @@
 33. [Vue 流式聊天、停止生成与消息终态](33-vue-streaming-chat-ui.md)
 34. [Vue 失败消息原位重试](34-vue-message-retry-ui.md)
 35. [Vue 会话管理状态层](35-vue-conversation-management-store.md)
+36. [Vue 会话管理界面](36-vue-conversation-management-ui.md)
