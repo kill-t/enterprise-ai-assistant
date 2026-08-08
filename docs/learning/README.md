@@ -33,3 +33,4 @@
 27. [Vue 登录页面、会话恢复与路由守卫](27-vue-login-and-route-guard.md)
 28. [Vue 会话 API Client 与数据契约](28-vue-conversation-api-client.md)
 29. [Vue 会话状态 Store](29-vue-conversation-store.md)
+30. [Vue 会话列表页面与新建会话](30-vue-conversation-list-page.md)
