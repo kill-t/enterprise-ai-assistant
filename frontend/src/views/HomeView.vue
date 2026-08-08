@@ -133,7 +133,10 @@ onMounted(() => {
           data-test="conversation-list"
         >
           <li v-for="conversation in conversationStore.conversations" :key="conversation.id">
-            <article class="conversation-card">
+            <RouterLink
+              class="conversation-card"
+              :to="{ name: 'conversation-detail', params: { conversationId: conversation.id } }"
+            >
               <div class="conversation-card-main">
                 <h3>{{ conversation.title }}</h3>
                 <p>{{ conversation.model_name }} · 已使用 {{ conversation.total_tokens }} tokens</p>
@@ -141,7 +144,7 @@ onMounted(() => {
               <time :datetime="conversation.updated_at">
                 {{ formatUpdatedAt(conversation.updated_at) }}
               </time>
-            </article>
+            </RouterLink>
           </li>
         </ul>
       </section>

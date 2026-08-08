@@ -7,6 +7,7 @@ import {
 } from "vue-router";
 
 import { useAuthStore } from "@/stores/auth";
+import ConversationDetailView from "@/views/ConversationDetailView.vue";
 import HomeView from "@/views/HomeView.vue";
 import LoginView from "@/views/LoginView.vue";
 
@@ -35,6 +36,12 @@ export function createAppRouter(
         path: "/",
         name: "home",
         component: HomeView,
+        meta: { requiresAuth: true },
+      },
+      {
+        path: "/conversations/:conversationId",
+        name: "conversation-detail",
+        component: ConversationDetailView,
         meta: { requiresAuth: true },
       },
       {

@@ -449,6 +449,15 @@ textarea {
   border: 1px solid #e0eae5;
   border-radius: 18px;
   background: #fcfefd;
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 160ms ease, box-shadow 160ms ease, transform 160ms ease;
+}
+
+.conversation-card:hover {
+  border-color: #b8d7ca;
+  box-shadow: 0 10px 24px rgb(30 73 60 / 8%);
+  transform: translateY(-1px);
 }
 
 .conversation-card h3 {
@@ -470,6 +479,151 @@ textarea {
 .conversation-card time {
   flex: 0 0 auto;
   white-space: nowrap;
+}
+
+.detail-main {
+  max-width: 980px;
+}
+
+.back-link {
+  display: inline-flex;
+  margin-bottom: 32px;
+  color: #3e7665;
+  font-size: 14px;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.back-link:hover {
+  color: #1f5748;
+}
+
+.detail-loading {
+  margin-top: 56px;
+}
+
+.detail-error-state,
+.detail-header,
+.message-history {
+  padding: clamp(24px, 5vw, 42px);
+  border: 1px solid #dbe6e0;
+  border-radius: 28px;
+  background: rgb(255 255 255 / 88%);
+  box-shadow: 0 28px 90px rgb(30 73 60 / 10%);
+}
+
+.detail-error-state {
+  max-width: 680px;
+}
+
+.detail-error-state h1,
+.detail-header h1 {
+  margin: 0;
+  color: #17382f;
+  font-size: clamp(32px, 5vw, 54px);
+  letter-spacing: -0.04em;
+}
+
+.detail-error-state > p:last-child,
+.detail-title-row p {
+  color: #667a73;
+  line-height: 1.8;
+}
+
+.detail-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.refresh-status {
+  margin: 22px 0 0;
+  color: #607c72;
+  font-size: 14px;
+}
+
+.message-history {
+  margin-top: 20px;
+}
+
+.message-list {
+  display: grid;
+  gap: 16px;
+  margin: 28px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.message-item {
+  display: flex;
+}
+
+.message-item--user {
+  justify-content: flex-end;
+}
+
+.message-card {
+  width: min(82%, 680px);
+  padding: 18px 20px;
+  border: 1px solid #dfe9e4;
+  border-radius: 20px;
+  background: #f8fbf9;
+}
+
+.message-item--user .message-card {
+  border-color: #c4dfd3;
+  background: #e7f3ed;
+}
+
+.message-item--tool .message-card,
+.message-item--system .message-card {
+  width: 100%;
+  border-style: dashed;
+  background: #f5f8f6;
+}
+
+.message-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  color: #52746a;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.message-card-header > div {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: #788b84;
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.message-status {
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #95513f;
+  background: #fff0ea;
+  font-weight: 750;
+}
+
+.message-content {
+  margin: 12px 0 0;
+  color: #28483f;
+  line-height: 1.75;
+  white-space: pre-wrap;
+}
+
+.message-error {
+  margin: 12px 0 0;
+  padding-top: 12px;
+  border-top: 1px solid #efd4cc;
+  color: #a0493c;
+  font-size: 13px;
+  line-height: 1.6;
 }
 
 @media (max-width: 900px) {
@@ -504,7 +658,8 @@ textarea {
 
   .workspace-intro,
   .conversation-card,
-  .conversation-error {
+  .conversation-error,
+  .detail-title-row {
     align-items: flex-start;
     flex-direction: column;
   }
@@ -516,5 +671,9 @@ textarea {
   .conversation-panel-heading {
     align-items: flex-start;
     flex-direction: column;
+  }
+
+  .message-card {
+    width: 100%;
   }
 }

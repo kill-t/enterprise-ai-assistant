@@ -61,6 +61,25 @@ describe("认证路由守卫", () => {
     expect(authApi.getCurrentUser).toHaveBeenCalledWith("valid-token");
   });
 
+  it("有效 Token 可以进入带会话 ID 的受保护详情路由", async () => {
+    sessionStorage.setItem(
+      "enterprise-ai-assistant.access-token",
+      "valid-token",
+    );
+    vi.mocked(authApi.getCurrentUser).mockResolvedValue(currentUser());
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createAppRouter(pinia, createMemoryHistory());
+
+    await router.push("/conversations/conversation-1");
+    await router.isReady();
+
+    expect(router.currentRoute.value.name).toBe("conversation-detail");
+    expect(router.currentRoute.value.params.conversationId).toBe(
+      "conversation-1",
+    );
+  });
+
   it("Token 返回 401 时清理会话并跳转登录", async () => {
     sessionStorage.setItem(
       "enterprise-ai-assistant.access-token",

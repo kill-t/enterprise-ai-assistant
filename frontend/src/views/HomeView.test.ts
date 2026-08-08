@@ -42,6 +42,11 @@ async function mountHomeView() {
     routes: [
       { path: "/", name: "home", component: HomeView },
       { path: "/login", name: "login", component: { template: "<p>登录页</p>" } },
+      {
+        path: "/conversations/:conversationId",
+        name: "conversation-detail",
+        component: { template: "<p>会话详情</p>" },
+      },
     ],
   });
   await router.push("/");
@@ -82,6 +87,9 @@ describe("HomeView", () => {
     expect(wrapper.get('[data-test="conversation-list"]').text()).toContain(
       "项目会议准备",
     );
+    expect(
+      wrapper.get('[data-test="conversation-list"] a').attributes("href"),
+    ).toBe("/conversations/conversation-1");
     expect(wrapper.text()).toContain("demo@example.com");
   });
 
