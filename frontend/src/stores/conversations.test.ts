@@ -9,7 +9,9 @@ import { useConversationStore } from "@/stores/conversations";
 
 vi.mock("@/api/conversations", () => ({
   createConversation: vi.fn(),
+  deleteConversation: vi.fn(),
   listConversations: vi.fn(),
+  updateConversation: vi.fn(),
 }));
 
 const firstConversation: ConversationResponse = {
@@ -125,5 +127,117 @@ describe("useConversationStore", () => {
     expect(store.hasLoaded).toBe(false);
     expect(store.includeArchived).toBe(false);
     expect(store.errorMessage).toBeNull();
+  });
+
+  it("重命名时先标记该会话处理中，成功后只替换对应会话", async () => {
+    setAuthenticatedToken();
+    const renamedConversation: ConversationResponse = {
+      ...firstConversation,
+      title: "项目会议简报",
+    };
+    let finishRequest: ((conversation: ConversationResponse) => void) | undefined;
+    vi.mocked(conversationsApi.updateConversation).mockImplementation(
+      () =>
+        new Promise<ConversationResponse>((resolve) => {
+          finishRequest = resolve;
+        }),
+    );
+    const store = useConversationStore();
+    store.conversations = [firstConversation, secondConversation];
+
+    const renamePromise = store.renameConversation(
+      firstConversation.id,
+      "  项目会议简报  ",
+    );
+
+    expect(store.isUpdatingConversation(firstConversation.id)).toBe(true);
+    expect(store.isManagingConversation(firstConversation.id)).toBe(true);
+
+    finishRequest?.(renamedConversation);
+    await expect(renamePromise).resolves.toEqual(renamedConversation);
+
+    expect(conversationsApi.updateConversation).toHaveBeenCalledWith(
+      "access-token",
+      firstConversation.id,
+      { title: "项目会议简报" },
+    );
+    expect(store.conversations).toEqual([renamedConversation, secondConversation]);
+    expect(store.isUpdatingConversation(firstConversation.id)).toBe(false);
+    expect(store.actionErrorMessages[firstConversation.id]).toBeUndefined();
+  });
+
+  it("归档成功后从未归档列表移除该会话", async () => {
+    setAuthenticatedToken();
+    const archivedConversation: ConversationResponse = {
+      ...firstConversation,
+      is_archived: true,
+    };
+    vi.mocked(conversationsApi.updateConversation).mockResolvedValue(
+      archivedConversation,
+    );
+    const store = useConversationStore();
+    store.conversations = [firstConversation, secondConversation];
+
+    await expect(store.archiveConversation(firstConversation.id)).resolves.toEqual(
+      archivedConversation,
+    );
+
+    expect(conversationsApi.updateConversation).toHaveBeenCalledWith(
+      "access-token",
+      firstConversation.id,
+      { is_archived: true },
+    );
+    expect(store.conversations).toEqual([secondConversation]);
+    expect(store.isUpdatingConversation(firstConversation.id)).toBe(false);
+  });
+
+  it("删除成功后只从列表移除目标会话", async () => {
+    setAuthenticatedToken();
+    let finishRequest: (() => void) | undefined;
+    vi.mocked(conversationsApi.deleteConversation).mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          finishRequest = resolve;
+        }),
+    );
+    const store = useConversationStore();
+    store.conversations = [firstConversation, secondConversation];
+
+    const deletePromise = store.deleteConversation(firstConversation.id);
+
+    expect(store.isDeletingConversation(firstConversation.id)).toBe(true);
+    expect(store.isManagingConversation(firstConversation.id)).toBe(true);
+
+    finishRequest?.();
+    await expect(deletePromise).resolves.toBe(true);
+
+    expect(conversationsApi.deleteConversation).toHaveBeenCalledWith(
+      "access-token",
+      firstConversation.id,
+    );
+    expect(store.conversations).toEqual([secondConversation]);
+    expect(store.isDeletingConversation(firstConversation.id)).toBe(false);
+  });
+
+  it("会话管理请求失败时保留原列表，并记录该会话的中文错误", async () => {
+    setAuthenticatedToken();
+    vi.mocked(conversationsApi.updateConversation).mockRejectedValue(
+      new ApiError("会话服务暂时不可用", {
+        status: 503,
+        code: "SERVICE_UNAVAILABLE",
+      }),
+    );
+    const store = useConversationStore();
+    store.conversations = [firstConversation];
+
+    await expect(
+      store.renameConversation(firstConversation.id, "项目会议简报"),
+    ).resolves.toBeNull();
+
+    expect(store.conversations).toEqual([firstConversation]);
+    expect(store.actionErrorMessages[firstConversation.id]).toBe(
+      "会话服务暂时不可用",
+    );
+    expect(store.isUpdatingConversation(firstConversation.id)).toBe(false);
   });
 });
