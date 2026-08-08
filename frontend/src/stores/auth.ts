@@ -10,6 +10,8 @@ interface AuthState {
   token: string | null;
   user: UserResponse | null;
   loading: boolean;
+  sessionInitialized: boolean;
+  sessionError: string | null;
 }
 
 /** 管理当前标签页的短期 JWT 与用户公开信息。 */
@@ -19,6 +21,8 @@ export const useAuthStore = defineStore("auth", {
     token: sessionStorage.getItem(ACCESS_TOKEN_KEY),
     user: null,
     loading: false,
+    sessionInitialized: false,
+    sessionError: null,
   }),
   getters: {
     isAuthenticated: (state): boolean => Boolean(state.token),
@@ -30,6 +34,9 @@ export const useAuthStore = defineStore("auth", {
       try {
         const response = await loginRequest(email, password);
         this.token = response.access_token;
+        this.user = null;
+        this.sessionInitialized = false;
+        this.sessionError = null;
         sessionStorage.setItem(ACCESS_TOKEN_KEY, response.access_token);
       } finally {
         this.loading = false;
@@ -55,10 +62,39 @@ export const useAuthStore = defineStore("auth", {
       }
     },
 
+    /** 首次路由导航时只验证一次已有 Token，并区分失效与临时断网。 */
+    async ensureSession(): Promise<void> {
+      if (this.sessionInitialized) {
+        return;
+      }
+      if (!this.token) {
+        this.sessionInitialized = true;
+        this.sessionError = null;
+        return;
+      }
+
+      try {
+        await this.loadCurrentUser();
+        this.sessionError = null;
+      } catch (error) {
+        // loadCurrentUser 已在 401 时 logout；其他故障保留 Token，避免断网强退。
+        if (this.token) {
+          this.sessionError =
+            error instanceof ApiError
+              ? error.message
+              : "暂时无法验证登录状态，请稍后重试";
+        }
+      } finally {
+        this.sessionInitialized = true;
+      }
+    },
+
     /** 清除 Pinia 与当前标签页存储的全部认证状态。 */
     logout(): void {
       this.token = null;
       this.user = null;
+      this.sessionInitialized = true;
+      this.sessionError = null;
       sessionStorage.removeItem(ACCESS_TOKEN_KEY);
     },
   },
