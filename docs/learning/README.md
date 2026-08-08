@@ -41,3 +41,4 @@
 35. [Vue 会话管理状态层](35-vue-conversation-management-store.md)
 36. [Vue 会话管理界面](36-vue-conversation-management-ui.md)
 37. [本地联调底座与注册自动登录](37-local-runtime-and-registration.md)
+38. [RAG 数据地基：pgvector 与四张核心表](38-rag-pgvector-data-foundation.md)

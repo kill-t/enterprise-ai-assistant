@@ -79,5 +79,9 @@ npm run dev
 完成后可停止应用进程；如需停止基础设施但保留数据库数据：
 
 ```powershell
-docker compose -f infra/docker/docker-compose.yml down
+docker compose -f infra/docker/docker-compose.yml stop
 ```
+
+`stop` 只停止容器，PostgreSQL 和 Redis 仍会保留在 Docker Desktop 列表中，之后可以
+点击启动。`docker compose down` 会移除容器但默认保留命名数据卷；除非明确需要重建
+容器，否则本地开发不使用 `down`，也不要执行会删除数据卷的 `down -v`。

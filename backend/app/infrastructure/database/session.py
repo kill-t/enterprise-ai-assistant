@@ -1,5 +1,7 @@
 from collections.abc import AsyncGenerator
 
+from pgvector.psycopg import register_vector_async
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -22,6 +24,17 @@ engine = create_async_engine(
     echo=False,
     pool_pre_ping=True,
 )
+
+
+def register_pgvector_types(dbapi_connection, connection_record) -> None:
+    """为每条 psycopg 异步连接注册 vector 编解码器。"""
+    del connection_record
+
+    # SQLAlchemy 暴露的是同步适配连接；run_async 会在原异步驱动连接上执行注册函数。
+    dbapi_connection.run_async(register_vector_async)
+
+
+event.listen(engine.sync_engine, "connect", register_pgvector_types)
 
 SessionLocal = async_sessionmaker(
     bind=engine,

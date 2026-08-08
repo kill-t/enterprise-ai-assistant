@@ -12,6 +12,7 @@ from app.modules.conversation.entity.conversation_summary import ConversationSum
 from app.modules.conversation.entity.conversation_summary_job import ConversationSummaryJobEntity  # noqa: F401, E402
 from app.modules.conversation.entity.message import MessageEntity  # noqa: F401, E402
 from app.modules.identity.entity.user import UserEntity  # noqa: F401, E402
+from app.modules.knowledge import models as knowledge_models  # noqa: F401, E402
 
 
 # Alembic 配置对象保存 alembic.ini 中的配置；数据库地址以应用配置为准。
