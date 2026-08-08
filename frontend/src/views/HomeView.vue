@@ -2,12 +2,15 @@
 import { useRouter } from "vue-router";
 
 import { useAuthStore } from "@/stores/auth";
+import { useConversationStore } from "@/stores/conversations";
 
 const authStore = useAuthStore();
+const conversationStore = useConversationStore();
 const router = useRouter();
 
 /** 清理本地身份状态并替换历史记录，避免后退回受保护页面。 */
 async function logout(): Promise<void> {
+  conversationStore.reset();
   authStore.logout();
   await router.replace({ name: "login" });
 }
