@@ -31,7 +31,7 @@ Provider 的 delta 只有正文：
 
 - 这段正文属于哪条助手消息。
 - 用户问题是否已经保存。
-- 助手消息当前是 PENDING、COMPLETED 还是 FAILED。
+- 助手消息当前是 PENDING、COMPLETED、FAILED 还是 CANCELLED。
 - 最终正文是否已经提交数据库。
 - 失败后应该用哪条消息 ID 重试。
 
@@ -277,14 +277,14 @@ await provider.chat(request)
 
 ## 13. 数据分别保存在哪里
 
-| 数据 | 生成期间 | 成功后 | 失败后 |
-|---|---|---|---|
-| 用户消息 | PostgreSQL + Redis | 保留 | 保留 |
-| 助手占位 | PostgreSQL PENDING | 更新为 COMPLETED | 更新为 FAILED |
-| delta 片段 | Service 内存 | 合并后一次写 PostgreSQL | 部分正文一次写 PostgreSQL |
-| 成功助手消息 | 无 | PostgreSQL + Redis | 无 |
-| 失败助手消息 | 无 | 无 | 仅 PostgreSQL |
-| 摘要任务 | 无 | 尽力调度 | 不调度 |
+| 数据 | 生成期间 | 成功后 | 失败后 | 取消后 |
+|---|---|---|---|---|
+| 用户消息 | PostgreSQL + Redis | 保留 | 保留 | 保留 |
+| 助手占位 | PostgreSQL PENDING | 更新为 COMPLETED | 更新为 FAILED | 更新为 CANCELLED |
+| delta 片段 | Service 内存 | 合并后一次写 PostgreSQL | 部分正文一次写 PostgreSQL | 部分正文一次写 PostgreSQL |
+| 成功助手消息 | 无 | PostgreSQL + Redis | 无 | 无 |
+| 非成功助手消息 | 无 | 无 | 仅 PostgreSQL | 仅 PostgreSQL |
+| 摘要任务 | 无 | 尽力调度 | 不调度 | 不调度 |
 
 ## 14. 本模块没有数据库迁移
 
@@ -300,12 +300,12 @@ await provider.chat(request)
 
 ## 15. 当前还没有实现什么
 
-- 浏览器断线与用户主动取消后的消息终态。
 - 前端逐段渲染和按钮禁用。
 - 跨进程恢复普通聊天生成。
 - `llm_runs` 模型调用审计表。
 
 FastAPI SSE 路由和文本帧编码已在[第 24 模块](24-fastapi-sse-transport.md)完成。
+可正常传播的取消和断线终态已在[第 25 模块](25-stream-cancellation-state.md)完成。
 
 ## 16. 测试保护什么
 

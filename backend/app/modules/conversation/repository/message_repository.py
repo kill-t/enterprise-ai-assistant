@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, or_, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.enums import MessageStatus
@@ -32,6 +32,36 @@ class MessageRepository:
         """按主键查询消息，不存在时返回 None。"""
         stmt = select(MessageEntity).where(MessageEntity.id == message_id)
         return await self.db.scalar(stmt)
+
+    async def mark_cancelled_if_pending(
+        self,
+        message_id: UUID,
+        *,
+        partial_content: str,
+        error_code: str,
+        error_message: str,
+        finished_at: datetime,
+    ) -> bool:
+        """仅当消息仍为 PENDING 时，原子写入取消终态和部分正文。"""
+        statement = (
+            update(MessageEntity)
+            .where(
+                MessageEntity.id == message_id,
+                MessageEntity.status == MessageStatus.PENDING,
+            )
+            .values(
+                content=partial_content,
+                status=MessageStatus.CANCELLED,
+                error_code=error_code,
+                error_message=error_message,
+                finished_at=finished_at,
+            )
+            .returning(MessageEntity.id)
+            # 条件更新只关心数据库终态，不让 ORM 内存对象参与并发判断。
+            .execution_options(synchronize_session=False)
+        )
+        updated_message_id = await self.db.scalar(statement)
+        return updated_message_id is not None
 
     async def list_by_conversation(
         self,

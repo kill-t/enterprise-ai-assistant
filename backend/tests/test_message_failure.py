@@ -4,6 +4,8 @@ from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
+import pytest
+
 from app.common.enums import MessageRole, MessageStatus
 from app.common.exception.business_exception import BusinessException
 from app.common.exception.error_code import ErrorCode
@@ -192,25 +194,40 @@ def test_failed_message_response_exposes_safe_error_details() -> None:
     assert response.error_code == ErrorCode.MODEL_TIMEOUT.value
 
 
-def test_retry_reuses_failed_assistant_message_and_excludes_original_question() -> None:
-    """重试成功时必须复用原助手消息，且原问题只作为当前问题传给模型一次。"""
+@pytest.mark.parametrize(
+    "retryable_status",
+    [MessageStatus.FAILED, MessageStatus.CANCELLED],
+    ids=["failed", "cancelled"],
+)
+def test_retry_reuses_retryable_assistant_message_and_excludes_original_question(
+    retryable_status: MessageStatus,
+) -> None:
+    """失败或取消后重试必须复用原助手消息，且原问题只传给模型一次。"""
     conversation_id = uuid4()
-    failed_message = MessageEntity(
+    retryable_message = MessageEntity(
         id=uuid4(),
         conversation_id=conversation_id,
         role=MessageRole.ASSISTANT,
         content="",
         model_name="mock",
-        status=MessageStatus.FAILED,
-        error_code=ErrorCode.MODEL_TIMEOUT.value,
-        error_message="模型响应超时，请稍后重试",
+        status=retryable_status,
+        error_code=(
+            ErrorCode.MODEL_TIMEOUT.value
+            if retryable_status == MessageStatus.FAILED
+            else ErrorCode.GENERATION_CANCELLED.value
+        ),
+        error_message=(
+            "模型响应超时，请稍后重试"
+            if retryable_status == MessageStatus.FAILED
+            else "回答生成已取消"
+        ),
         created_at=datetime.now(timezone.utc),
         finished_at=datetime.now(timezone.utc),
     )
     provider = SuccessfulProvider()
     service, message_repository, memory_manager = build_retry_service(
         conversation_id,
-        failed_message,
+        retryable_message,
         provider,
     )
 
@@ -218,15 +235,15 @@ def test_retry_reuses_failed_assistant_message_and_excludes_original_question() 
         service.retry_failed_message(
             user_id=uuid4(),
             conversation_id=conversation_id,
-            message_id=failed_message.id,
+            message_id=retryable_message.id,
         )
     )
 
-    assert response.id == failed_message.id
-    assert failed_message.status == MessageStatus.COMPLETED
-    assert failed_message.content == "已重新生成会议待办"
-    assert failed_message.error_code is None
-    assert failed_message.error_message is None
+    assert response.id == retryable_message.id
+    assert retryable_message.status == MessageStatus.COMPLETED
+    assert retryable_message.content == "已重新生成会议待办"
+    assert retryable_message.error_code is None
+    assert retryable_message.error_message is None
     assert message_repository.create.await_count == 0
     assert [message.role for message in memory_manager.saved_messages] == ["assistant"]
     assert [message.content for message in provider.requests[0].messages].count(
@@ -279,7 +296,7 @@ def test_retry_failure_marks_the_same_message_as_failed_again() -> None:
     service.summary_job_service.maybe_schedule.assert_not_awaited()
 
 
-def test_only_failed_assistant_message_can_be_retried() -> None:
+def test_pending_assistant_message_cannot_be_retried() -> None:
     """处理中或已完成消息即使被重复点击，也必须被服务层拒绝。"""
     conversation_id = uuid4()
     pending_message = MessageEntity(

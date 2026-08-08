@@ -319,7 +319,7 @@ except Exception:
 
 但不会捕获 `asyncio.CancelledError`。这很重要：以后用户点击“停止生成”时，取消信号必须继续向外传播，才能真正终止 SDK 网络流，而不是被误写成普通模型错误。
 
-本模块尚未实现取消按钮和取消后的数据库状态，只是先保护这条传播路径。
+本模块当时只保护了取消信号的传播路径；取消后的数据库状态已在[第 25 模块](25-stream-cancellation-state.md)实现。
 
 详见[Service 流式消息状态与事务边界](23-service-stream-message-state.md)。
 
@@ -327,7 +327,7 @@ except Exception:
 
 - HTTP `/messages/stream` 和 SSE 帧尚未实现。
 - 前端不会逐段显示。
-- 尚未实现用户主动取消。
+- Provider 层不负责取消后的业务状态；该能力由第 25 模块的 Conversation Service 实现。
 - 流式过程中不实时写 PostgreSQL。
 
 当前普通聊天仍调用 `await provider.chat()`；新的 Service 流尚未接入 HTTP，因此现有接口行为不变。

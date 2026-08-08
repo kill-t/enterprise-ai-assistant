@@ -11,11 +11,12 @@ class MessageRole(str, Enum):
 
 
 class MessageStatus(str, Enum):
-    """助手消息从创建到完成或失败的生命周期状态。"""
+    """助手消息从创建到完成、失败或取消的生命周期状态。"""
 
     PENDING = "pending"
     COMPLETED = "completed"
     FAILED = "failed"
+    CANCELLED = "cancelled"
 
 
 class SummaryJobStatus(str, Enum):

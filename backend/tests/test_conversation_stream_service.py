@@ -1,6 +1,7 @@
 import asyncio
 import inspect
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
 from uuid import uuid4
@@ -80,6 +81,25 @@ class ScriptedStreamProvider:
             self.closed = True
 
 
+class BlockingStreamProvider:
+    """产生一个片段后保持等待，供测试真实任务取消。"""
+
+    def __init__(self) -> None:
+        """创建可观察的等待和关闭状态。"""
+        self.waiting = asyncio.Event()
+        self.release = asyncio.Event()
+        self.closed = False
+
+    async def stream_chat(self, request):
+        """发送一个片段，然后阻塞到测试取消消费任务。"""
+        try:
+            yield ChatStreamDeltaEvent(delta="部分回答")
+            self.waiting.set()
+            await self.release.wait()
+        finally:
+            self.closed = True
+
+
 def build_service(provider, event_log: list[str] | None = None):
     """组装可观察事务、持久化、缓存和摘要调度的会话服务。"""
     events = event_log if event_log is not None else []
@@ -90,11 +110,13 @@ def build_service(provider, event_log: list[str] | None = None):
         temperature=0.7,
         model_name="mock",
     )
+    created_messages = {}
 
     def persist_message(message):
         """模拟数据库生成消息 ID 和创建时间。"""
         message.id = message.id or uuid4()
         message.created_at = message.created_at or datetime.now(timezone.utc)
+        created_messages[message.id] = message
         events.append(f"create:{message.role.value}")
         return message
 
@@ -103,10 +125,33 @@ def build_service(provider, event_log: list[str] | None = None):
         events.append(f"update:{message.status.value}")
         return message
 
+    def cancel_pending_message(
+        message_id,
+        *,
+        partial_content,
+        error_code,
+        error_message,
+        finished_at,
+    ):
+        """模拟只允许 PENDING 原子进入 CANCELLED 的仓储更新。"""
+        message = created_messages[message_id]
+        if message.status != MessageStatus.PENDING:
+            events.append("cancel:skipped")
+            return False
+        message.content = partial_content
+        message.status = MessageStatus.CANCELLED
+        message.error_code = error_code
+        message.error_message = error_message
+        message.finished_at = finished_at
+        events.append("cancel:cancelled")
+        return True
+
     message_repository = SimpleNamespace(
         create=AsyncMock(side_effect=persist_message),
         update=AsyncMock(side_effect=update_message),
+        mark_cancelled_if_pending=AsyncMock(side_effect=cancel_pending_message),
         list_completed_by_conversation=AsyncMock(return_value=[]),
+        entities=created_messages,
     )
     summary_job_service = SimpleNamespace(
         maybe_schedule=AsyncMock(
@@ -321,3 +366,170 @@ def test_message_pair_creation_failure_rolls_back_before_provider_starts() -> No
     assert events[-1] == "rollback"
     assert "commit" not in events
     assert provider.started is False
+
+
+def test_closing_stream_after_started_marks_empty_assistant_cancelled() -> None:
+    """客户端在首帧后断开时，应取消占位消息且不启动 Provider。"""
+    provider = ScriptedStreamProvider([])
+    service, conversation_id, repository, summary_jobs, events = build_service(provider)
+
+    async def scenario():
+        """读取 started 后立即关闭 Service 异步生成器。"""
+        stream = service.stream_message(
+            user_id=uuid4(),
+            conversation_id=conversation_id,
+            content="整理会议纪要",
+        )
+        started = await anext(stream)
+        await stream.aclose()
+        return started
+
+    started = asyncio.run(scenario())
+    assistant = repository.entities[started.assistant_message.id]
+
+    assert assistant.status == MessageStatus.CANCELLED
+    assert assistant.content == ""
+    assert assistant.error_code == ErrorCode.GENERATION_CANCELLED.value
+    assert assistant.error_message == "回答生成已取消"
+    assert assistant.finished_at is not None
+    assert provider.started is False
+    assert events[-2:] == ["cancel:cancelled", "commit"]
+    summary_jobs.maybe_schedule.assert_not_awaited()
+
+
+def test_closing_stream_after_delta_persists_partial_text_as_cancelled() -> None:
+    """断开发生在部分输出后时，应保存已发送正文并关闭 Provider。"""
+    provider = ScriptedStreamProvider([ChatStreamDeltaEvent(delta="部分回答")])
+    service, conversation_id, repository, _, events = build_service(provider)
+
+    async def scenario():
+        """读取 started 和首个 delta 后主动关闭业务流。"""
+        stream = service.stream_message(
+            user_id=uuid4(),
+            conversation_id=conversation_id,
+            content="整理会议纪要",
+        )
+        started = await anext(stream)
+        delta = await anext(stream)
+        await stream.aclose()
+        return started, delta
+
+    started, delta = asyncio.run(scenario())
+    assistant = repository.entities[started.assistant_message.id]
+
+    assert delta.delta == "部分回答"
+    assert assistant.status == MessageStatus.CANCELLED
+    assert assistant.content == "部分回答"
+    assert provider.closed is True
+    assert events[-2:] == ["cancel:cancelled", "commit"]
+
+
+def test_task_cancellation_is_re_raised_after_persisting_cancelled_state() -> None:
+    """运行中的请求任务被取消时，必须保存状态并继续传播 CancelledError。"""
+    provider = BlockingStreamProvider()
+    service, conversation_id, repository, _, _ = build_service(provider)
+    observed_events = []
+
+    async def scenario():
+        """启动流消费任务，等待 Provider 阻塞后取消该任务。"""
+
+        async def consume() -> None:
+            """持续消费事件，直到外层任务发出取消。"""
+            async for event in service.stream_message(
+                user_id=uuid4(),
+                conversation_id=conversation_id,
+                content="整理会议纪要",
+            ):
+                observed_events.append(event)
+
+        task = asyncio.create_task(consume())
+        await provider.waiting.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(scenario())
+    started = observed_events[0]
+    assistant = repository.entities[started.assistant_message.id]
+
+    assert assistant.status == MessageStatus.CANCELLED
+    assert assistant.content == "部分回答"
+    assert provider.closed is True
+
+
+def test_cancellation_persistence_failure_rolls_back_without_swallowing_cancel() -> (
+    None
+):
+    """取消终态写库失败时应回滚，但仍要把原始 CancelledError 传给上层。"""
+    provider = BlockingStreamProvider()
+    service, conversation_id, repository, _, events = build_service(provider)
+    repository.mark_cancelled_if_pending.side_effect = RuntimeError("数据库写入失败")
+
+    async def scenario() -> None:
+        """取消正在等待 Provider 的消费任务，并观察清理失败后的控制流。"""
+
+        async def consume() -> None:
+            """消费消息流直到测试发出任务取消。"""
+            async for _ in service.stream_message(
+                user_id=uuid4(),
+                conversation_id=conversation_id,
+                content="整理会议纪要",
+            ):
+                pass
+
+        task = asyncio.create_task(consume())
+        await provider.waiting.wait()
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    asyncio.run(scenario())
+
+    assert provider.closed is True
+    assert events[-1] == "rollback"
+
+
+def test_closing_after_completed_does_not_overwrite_terminal_state() -> None:
+    """客户端收到 completed 时断开，原子取消不能把成功消息改写。"""
+    provider = ScriptedStreamProvider(
+        [
+            ChatStreamDeltaEvent(delta="完整回答"),
+            ChatStreamCompletedEvent(
+                response=ChatResponse(content="完整回答", model="mock-stream")
+            ),
+        ]
+    )
+    service, conversation_id, repository, _, events = build_service(provider)
+
+    async def scenario():
+        """停在 completed 事件处关闭生成器，模拟终点附近的竞争。"""
+        stream = service.stream_message(
+            user_id=uuid4(),
+            conversation_id=conversation_id,
+            content="整理会议纪要",
+        )
+        started = await anext(stream)
+        await anext(stream)
+        completed = await anext(stream)
+        await stream.aclose()
+        return started, completed
+
+    started, completed = asyncio.run(scenario())
+    assistant = repository.entities[started.assistant_message.id]
+
+    assert completed.message.status == MessageStatus.COMPLETED
+    assert assistant.status == MessageStatus.COMPLETED
+    assert events[-2:] == ["cancel:skipped", "commit"]
+
+
+def test_cancelled_message_status_migration_follows_current_head() -> None:
+    """迁移必须从当前 head 增加 CANCELLED，并提供可执行的降级策略。"""
+    migration = Path(
+        "migrations/versions/b9d5e7f2a410_add_cancelled_message_status.py"
+    ).read_text(encoding="utf-8")
+
+    assert (
+        'down_revision: Union[str, Sequence[str], None] = "a8c4e6f1b209"' in migration
+    )
+    assert "ALTER TYPE messagestatus ADD VALUE IF NOT EXISTS 'CANCELLED'" in migration
+    assert "WHEN status::text = 'CANCELLED' THEN 'FAILED'" in migration

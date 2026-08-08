@@ -112,12 +112,8 @@ class ConversationService:
             recent_history_budget_tokens=(
                 settings.conversation_memory.recent_history_budget_tokens
             ),
-            summary_batch_tokens=(
-                settings.conversation_memory.summary_batch_tokens
-            ),
-            dispatch_lease_seconds=(
-                settings.worker.summary_dispatch_lease_seconds
-            ),
+            summary_batch_tokens=(settings.conversation_memory.summary_batch_tokens),
+            dispatch_lease_seconds=(settings.worker.summary_dispatch_lease_seconds),
         )
 
     async def create(
@@ -221,91 +217,102 @@ class ConversationService:
             content=content,
         )
         assistant_message = context.assistant_message
-        yield MessageStreamStartedEvent(
-            user_message=MessageResponse.model_validate(context.user_message),
-            assistant_message=MessageResponse.model_validate(assistant_message),
-        )
-
         content_parts: list[str] = []
-        terminal_event: ChatStreamCompletedEvent | ChatStreamErrorEvent | None = None
         try:
-            # 提前遇到终态时显式关闭 Provider 生成器，及时释放底层 HTTP 流。
-            async with aclosing(
-                self.provider.stream_chat(context.request)
-            ) as provider_stream:
-                async for provider_event in provider_stream:
-                    if isinstance(provider_event, ChatStreamDeltaEvent):
-                        content_parts.append(provider_event.delta)
-                        yield MessageStreamDeltaEvent(
-                            message_id=assistant_message.id,
-                            delta=provider_event.delta,
-                        )
-                        continue
+            # 外层 try 必须覆盖 started；客户端收到首帧后立即断开也要留下终态。
+            yield MessageStreamStartedEvent(
+                user_message=MessageResponse.model_validate(context.user_message),
+                assistant_message=MessageResponse.model_validate(assistant_message),
+            )
 
-                    if isinstance(
-                        provider_event,
-                        (ChatStreamCompletedEvent, ChatStreamErrorEvent),
-                    ):
-                        terminal_event = provider_event
+            terminal_event: ChatStreamCompletedEvent | ChatStreamErrorEvent | None = (
+                None
+            )
+            try:
+                # 提前遇到终态时显式关闭 Provider 生成器，及时释放底层 HTTP 流。
+                async with aclosing(
+                    self.provider.stream_chat(context.request)
+                ) as provider_stream:
+                    async for provider_event in provider_stream:
+                        if isinstance(provider_event, ChatStreamDeltaEvent):
+                            content_parts.append(provider_event.delta)
+                            yield MessageStreamDeltaEvent(
+                                message_id=assistant_message.id,
+                                delta=provider_event.delta,
+                            )
+                            continue
+
+                        if isinstance(
+                            provider_event,
+                            (ChatStreamCompletedEvent, ChatStreamErrorEvent),
+                        ):
+                            terminal_event = provider_event
+                            break
+
+                        # Provider 返回未知对象说明内部协议被破坏，不能继续当作成功处理。
                         break
+            except Exception as exc:
+                error = self._to_provider_exception(exc)
+                failed_event = await self._fail_stream_message(
+                    assistant_message=assistant_message,
+                    partial_content="".join(content_parts),
+                    error=error,
+                )
+                app_logger.warning(
+                    "模型流式调用异常 conversation_id=%s error_code=%s",
+                    conversation_id,
+                    error.code.value,
+                    exc_info=True,
+                )
+                yield failed_event
+                return
 
-                    # Provider 返回未知对象说明内部协议被破坏，不能继续当作成功处理。
-                    break
-        except Exception as exc:
-            error = self._to_provider_exception(exc)
-            failed_event = await self._fail_stream_message(
+            partial_content = "".join(content_parts)
+            if isinstance(terminal_event, ChatStreamErrorEvent):
+                if terminal_event.model is not None:
+                    assistant_message.model_name = terminal_event.model
+                error = BusinessException(
+                    code=ErrorCode.MODEL_REQUEST_FAILED,
+                    message="模型流式调用失败，请稍后重试",
+                    status_code=502,
+                )
+                yield await self._fail_stream_message(
+                    assistant_message=assistant_message,
+                    partial_content=partial_content,
+                    error=error,
+                )
+                return
+
+            if (
+                terminal_event is None
+                or terminal_event.response.content != partial_content
+            ):
+                error = BusinessException(
+                    code=ErrorCode.MODEL_STREAM_PROTOCOL_ERROR,
+                    message="模型流式响应不完整，请稍后重试",
+                    status_code=502,
+                )
+                yield await self._fail_stream_message(
+                    assistant_message=assistant_message,
+                    partial_content=partial_content,
+                    error=error,
+                )
+                return
+
+            completed_message = await self._complete_assistant_response(
+                conversation=context.conversation,
+                conversation_id=conversation_id,
+                assistant_message=assistant_message,
+                assistant_response=terminal_event.response,
+            )
+            yield MessageStreamCompletedEvent(message=completed_message)
+        except (asyncio.CancelledError, GeneratorExit):
+            # 取消不是模型失败；持久化终态后继续抛出，让上层真正终止响应任务。
+            await self._persist_stream_cancellation_safely(
                 assistant_message=assistant_message,
                 partial_content="".join(content_parts),
-                error=error,
             )
-            app_logger.warning(
-                "模型流式调用异常 conversation_id=%s error_code=%s",
-                conversation_id,
-                error.code.value,
-                exc_info=True,
-            )
-            yield failed_event
-            return
-
-        partial_content = "".join(content_parts)
-        if isinstance(terminal_event, ChatStreamErrorEvent):
-            if terminal_event.model is not None:
-                assistant_message.model_name = terminal_event.model
-            error = BusinessException(
-                code=ErrorCode.MODEL_REQUEST_FAILED,
-                message="模型流式调用失败，请稍后重试",
-                status_code=502,
-            )
-            yield await self._fail_stream_message(
-                assistant_message=assistant_message,
-                partial_content=partial_content,
-                error=error,
-            )
-            return
-
-        if (
-            terminal_event is None
-            or terminal_event.response.content != partial_content
-        ):
-            error = BusinessException(
-                code=ErrorCode.MODEL_STREAM_PROTOCOL_ERROR,
-                message="模型流式响应不完整，请稍后重试",
-                status_code=502,
-            )
-            yield await self._fail_stream_message(
-                assistant_message=assistant_message,
-                partial_content=partial_content,
-                error=error,
-            )
-            return
-
-        completed_message = await self._complete_assistant_response(
-            conversation=context.conversation,
-            conversation_id=conversation_id,
-            assistant_message=assistant_message,
-            assistant_response=terminal_event.response,
-        )
-        yield MessageStreamCompletedEvent(message=completed_message)
+            raise
 
     async def _prepare_message_generation(
         self,
@@ -362,11 +369,14 @@ class ConversationService:
         conversation_id: UUID,
         message_id: UUID,
     ) -> MessageResponse:
-        """将失败助手消息恢复为 pending，并使用原问题重新调用模型。"""
+        """将失败或取消的助手消息恢复为 pending，并使用原问题重新调用模型。"""
         conversation = await self._get_owned_conversation(user_id, conversation_id)
 
         assistant_message = await self.message_repository.get_by_id(message_id)
-        if assistant_message is None or assistant_message.conversation_id != conversation_id:
+        if (
+            assistant_message is None
+            or assistant_message.conversation_id != conversation_id
+        ):
             raise BusinessException(
                 code=ErrorCode.MESSAGE_NOT_FOUND,
                 message="消息不存在",
@@ -375,11 +385,12 @@ class ConversationService:
 
         if (
             assistant_message.role != MessageRole.ASSISTANT
-            or assistant_message.status != MessageStatus.FAILED
+            or assistant_message.status
+            not in {MessageStatus.FAILED, MessageStatus.CANCELLED}
         ):
             raise BusinessException(
                 code=ErrorCode.MESSAGE_NOT_RETRYABLE,
-                message="只有失败的助手消息可以重试",
+                message="只有失败或已取消的助手消息可以重试",
                 status_code=409,
             )
 
@@ -604,6 +615,57 @@ class ConversationService:
             message=MessageResponse.model_validate(assistant_message)
         )
 
+    async def _persist_stream_cancellation_safely(
+        self,
+        assistant_message: MessageEntity,
+        partial_content: str,
+    ) -> None:
+        """尽力把 PENDING 原子改为 CANCELLED，且不掩盖原始取消信号。"""
+        finished_at = datetime.now(timezone.utc)
+        try:
+            updated = await self.message_repository.mark_cancelled_if_pending(
+                assistant_message.id,
+                partial_content=partial_content,
+                error_code=ErrorCode.GENERATION_CANCELLED.value,
+                error_message="回答生成已取消",
+                finished_at=finished_at,
+            )
+            # 条件 UPDATE 即使未命中也开启了事务，统一提交以结束事务边界。
+            await self._commit()
+        except Exception:
+            app_logger.exception(
+                "持久化流式消息取消状态失败 conversation_id=%s message_id=%s",
+                assistant_message.conversation_id,
+                assistant_message.id,
+            )
+            try:
+                # 条件 UPDATE 执行失败后清理事务，避免复用到失效的 Session。
+                await self.db.rollback()
+            except Exception:
+                # 回滚失败也不能覆盖正在传播的用户取消信号。
+                app_logger.exception(
+                    "回滚流式消息取消事务失败 conversation_id=%s message_id=%s",
+                    assistant_message.conversation_id,
+                    assistant_message.id,
+                )
+            return
+
+        if not updated:
+            app_logger.info(
+                "流式消息已有终态，跳过取消更新 conversation_id=%s message_id=%s",
+                assistant_message.conversation_id,
+                assistant_message.id,
+            )
+            return
+
+        # 取消后不会再向客户端产出事件，数据库才是终态事实来源，无需改写 ORM 对象。
+        app_logger.info(
+            "流式消息已取消 conversation_id=%s message_id=%s partial_length=%s",
+            assistant_message.conversation_id,
+            assistant_message.id,
+            len(partial_content),
+        )
+
     async def _persist_assistant_failure(
         self,
         assistant_message: MessageEntity,
@@ -653,7 +715,9 @@ class ConversationService:
             )
 
         try:
-            memory_messages = await self.memory_manager.get_context(str(conversation_id))
+            memory_messages = await self.memory_manager.get_context(
+                str(conversation_id)
+            )
         except Exception:
             app_logger.warning(
                 "Redis 记忆不可用，改为从数据库读取历史 conversation_id=%s",

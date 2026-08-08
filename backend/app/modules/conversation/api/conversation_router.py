@@ -200,7 +200,7 @@ async def retry_failed_message(
     service: ConversationServiceDep,
     current_user: CurrentUserDep,
 ) -> MessageResponse:
-    """校验会话所有权后原位重试指定失败助手消息。"""
+    """校验会话所有权后原位重试指定失败或已取消的助手消息。"""
     return await service.retry_failed_message(
         user_id=current_user.id,
         conversation_id=conversation_id,
