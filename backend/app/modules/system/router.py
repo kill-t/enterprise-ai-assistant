@@ -12,7 +12,7 @@ router = APIRouter(tags=["System"])
 async def health():
     """返回进程级健康状态，供本地检查和容器探针使用。"""
 
-    return ApiResponse(data={"status": "ok"})
+    return ApiResponse.success(data={"status": "ok"})
 
 
 @router.get("/error")

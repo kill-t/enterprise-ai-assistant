@@ -162,7 +162,7 @@ watch(
           <div v-if="detailStore.hasLoaded && detailStore.messages.length === 0" class="empty-state" data-test="message-empty-state">
             <span class="empty-state-mark" aria-hidden="true">◌</span>
             <h3>还没有消息</h3>
-            <p>下一模块会在这里加入流式对话输入框。</p>
+            <p>输入你的问题，开始一次流式对话。</p>
           </div>
 
           <ol v-else class="message-list" data-test="message-list">

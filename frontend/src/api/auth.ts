@@ -1,5 +1,19 @@
 import { requestJson } from "@/api/client";
-import type { TokenResponse, UserResponse } from "@/api/contracts";
+import type {
+  TokenResponse,
+  UserRegisterInput,
+  UserResponse,
+} from "@/api/contracts";
+
+/** 创建用户账号；后端只返回公开用户字段，不在此接口签发 Token。 */
+export async function register(
+  input: UserRegisterInput,
+): Promise<UserResponse> {
+  return requestJson<UserResponse>("/api/v1/auth/register", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
 
 /** 按 OAuth2 Password Form 约定发送邮箱和密码。 */
 export async function login(

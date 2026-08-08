@@ -130,6 +130,7 @@ textarea {
 
 .panel-heading,
 .login-form,
+.auth-switch,
 .security-note {
   width: 100%;
   max-width: 440px;
@@ -242,6 +243,24 @@ textarea {
   color: #8a9994;
   font-size: 12px;
   text-align: center;
+}
+
+.auth-switch {
+  margin-top: 22px;
+  color: #71817b;
+  font-size: 14px;
+  text-align: center;
+}
+
+.auth-switch a {
+  color: #2c725e;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.auth-switch a:hover {
+  color: #174f40;
+  text-decoration: underline;
 }
 
 .workspace-page {

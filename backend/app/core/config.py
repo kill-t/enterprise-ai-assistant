@@ -57,6 +57,18 @@ class AuthSettings(BaseModel):
     algorithm: Literal["HS256"] = "HS256"
     access_token_expire_minutes: int = Field(default=30, gt=0, le=1440)
 
+    def validate_runtime(self) -> None:
+        """在服务启动前校验 JWT 密钥，避免首次登录才暴露配置缺失。"""
+        if self.secret_key is None:
+            raise RuntimeError(
+                "未配置 AUTH__SECRET_KEY，无法启动需要身份认证的服务"
+            )
+
+        # HS256 密钥应至少达到 32 字节；按 UTF-8 字节数而非字符数判断更准确。
+        secret_key_bytes = self.secret_key.get_secret_value().encode("utf-8")
+        if len(secret_key_bytes) < 32:
+            raise RuntimeError("AUTH__SECRET_KEY 至少 32 字节，请使用安全随机值")
+
 
 class WorkerSettings(BaseModel):
     """Celery Worker 的 Broker、队列和任务超时配置。"""

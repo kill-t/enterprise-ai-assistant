@@ -17,6 +17,8 @@ logger = logging.getLogger(__name__)
 async def lifespan(app: FastAPI):
     """管理应用启动与关闭生命周期，并在关闭时释放数据库连接池。"""
 
+    # 配置缺失应在服务刚启动时失败，不能拖延到用户第一次点击登录。
+    settings.auth.validate_runtime()
     logger.info("Enterprise AI Assistant 正在启动")
 
     try:

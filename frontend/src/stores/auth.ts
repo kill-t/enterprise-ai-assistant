@@ -1,6 +1,10 @@
 import { defineStore } from "pinia";
 
-import { getCurrentUser, login as loginRequest } from "@/api/auth";
+import {
+  getCurrentUser,
+  login as loginRequest,
+  register as registerRequest,
+} from "@/api/auth";
 import { ApiError } from "@/api/client";
 import type { UserResponse } from "@/api/contracts";
 
@@ -32,6 +36,22 @@ export const useAuthStore = defineStore("auth", {
     async login(email: string, password: string): Promise<void> {
       this.loading = true;
       try {
+        const response = await loginRequest(email, password);
+        this.token = response.access_token;
+        this.user = null;
+        this.sessionInitialized = false;
+        this.sessionError = null;
+        sessionStorage.setItem(ACCESS_TOKEN_KEY, response.access_token);
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    /** 注册成功后立即走既有登录接口，避免前端自行伪造 Token 或用户状态。 */
+    async registerAndLogin(email: string, password: string): Promise<void> {
+      this.loading = true;
+      try {
+        await registerRequest({ email, password });
         const response = await loginRequest(email, password);
         this.token = response.access_token;
         this.user = null;

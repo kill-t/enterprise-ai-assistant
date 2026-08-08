@@ -59,6 +59,12 @@ export interface UserResponse {
   updated_at: string;
 }
 
+/** 对应 FastAPI UserRegisterRequest，密码只用于请求，绝不保存到 Store。 */
+export interface UserRegisterInput {
+  email: string;
+  password: string;
+}
+
 /** 对应 FastAPI ConversationResponse，日期在 HTTP 中使用 ISO 字符串。 */
 export interface ConversationResponse {
   id: string;

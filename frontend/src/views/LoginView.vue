@@ -3,6 +3,7 @@ import { ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { ApiError } from "@/api/client";
+import { resolveSafeRedirect } from "@/router/redirect";
 import { useAuthStore } from "@/stores/auth";
 
 const authStore = useAuthStore();
@@ -12,18 +13,6 @@ const router = useRouter();
 const email = ref("");
 const password = ref("");
 const errorMessage = ref<string | null>(null);
-
-/** 返回站内安全跳转地址，拒绝 //example.com 形式的协议相对外链。 */
-function resolveRedirect(value: unknown): string {
-  if (
-    typeof value === "string" &&
-    value.startsWith("/") &&
-    !value.startsWith("//")
-  ) {
-    return value;
-  }
-  return "/";
-}
 
 /** 在请求前提供即时校验，后端仍会执行最终身份校验。 */
 function validateCredentials(): string | null {
@@ -49,7 +38,7 @@ async function submitLogin(): Promise<void> {
 
   try {
     await authStore.login(email.value.trim().toLowerCase(), password.value);
-    await router.replace(resolveRedirect(route.query.redirect));
+    await router.replace(resolveSafeRedirect(route.query.redirect));
   } catch (error) {
     errorMessage.value =
       error instanceof ApiError ? error.message : "登录失败，请稍后重试";
@@ -115,6 +104,18 @@ async function submitLogin(): Promise<void> {
         </button>
       </form>
 
+      <p class="auth-switch">
+        还没有账号？
+        <RouterLink
+          data-test="go-register"
+          :to="{
+            name: 'register',
+            query: route.query.redirect ? { redirect: route.query.redirect } : {},
+          }"
+        >
+          创建账号
+        </RouterLink>
+      </p>
       <p class="security-note">令牌只保存在当前浏览器标签页，不保存密码。</p>
     </section>
   </main>

@@ -19,8 +19,9 @@ async function mountLoginView(initialPath = "/login") {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: "/login", component: LoginView },
-      { path: "/", component: { template: "<p>首页</p>" } },
+      { path: "/login", name: "login", component: LoginView },
+      { path: "/register", name: "register", component: { template: "<p>注册页</p>" } },
+      { path: "/", name: "home", component: { template: "<p>首页</p>" } },
       { path: "/workspace", component: { template: "<p>工作区</p>" } },
     ],
   });
@@ -57,6 +58,14 @@ beforeEach(() => {
 });
 
 describe("LoginView", () => {
+  it("保留原受保护地址，提供前往注册页的入口", async () => {
+    const { wrapper } = await mountLoginView("/login?redirect=/workspace");
+
+    expect(wrapper.get('[data-test="go-register"]').attributes("href")).toBe(
+      "/register?redirect=/workspace",
+    );
+  });
+
   it("校验失败时不调用登录接口", async () => {
     const { wrapper } = await mountLoginView();
     await fillCredentials(wrapper, "demo@example.com", "short");

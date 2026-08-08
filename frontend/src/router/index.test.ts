@@ -10,6 +10,7 @@ import { useAuthStore } from "@/stores/auth";
 vi.mock("@/api/auth", () => ({
   login: vi.fn(),
   getCurrentUser: vi.fn(),
+  register: vi.fn(),
 }));
 
 /** 构造路由恢复成功时返回的当前用户。 */
@@ -40,6 +41,33 @@ describe("认证路由守卫", () => {
     expect(router.currentRoute.value.name).toBe("login");
     expect(router.currentRoute.value.query.redirect).toBe("/");
     expect(authApi.getCurrentUser).not.toHaveBeenCalled();
+  });
+
+  it("未登录用户可以访问注册页", async () => {
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createAppRouter(pinia, createMemoryHistory());
+
+    await router.push("/register");
+    await router.isReady();
+
+    expect(router.currentRoute.value.name).toBe("register");
+  });
+
+  it("已登录用户访问注册页时回到首页", async () => {
+    sessionStorage.setItem(
+      "enterprise-ai-assistant.access-token",
+      "valid-token",
+    );
+    vi.mocked(authApi.getCurrentUser).mockResolvedValue(currentUser());
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createAppRouter(pinia, createMemoryHistory());
+
+    await router.push("/register");
+    await router.isReady();
+
+    expect(router.currentRoute.value.name).toBe("home");
   });
 
   it("有效 Token 恢复用户后不能继续停留在登录页", async () => {

@@ -10,6 +10,7 @@ import { useAuthStore } from "@/stores/auth";
 import ConversationDetailView from "@/views/ConversationDetailView.vue";
 import HomeView from "@/views/HomeView.vue";
 import LoginView from "@/views/LoginView.vue";
+import RegisterView from "@/views/RegisterView.vue";
 
 declare module "vue-router" {
   interface RouteMeta {
@@ -30,6 +31,12 @@ export function createAppRouter(
         path: "/login",
         name: "login",
         component: LoginView,
+        meta: { guestOnly: true },
+      },
+      {
+        path: "/register",
+        name: "register",
+        component: RegisterView,
         meta: { guestOnly: true },
       },
       {
