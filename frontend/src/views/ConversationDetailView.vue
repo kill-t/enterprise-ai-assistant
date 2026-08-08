@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { watch } from "vue";
+import { ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import type { MessageRole, MessageStatus } from "@/api/contracts";
@@ -12,6 +12,7 @@ const conversationStore = useConversationStore();
 const detailStore = useConversationDetailStore();
 const route = useRoute();
 const router = useRouter();
+const draftContent = ref("");
 
 /** 把机器角色转换为对用户友好的中文标签。 */
 function roleLabel(role: MessageRole): string {
@@ -49,6 +50,17 @@ function loadRouteConversation(conversationId: unknown): void {
   if (typeof conversationId === "string" && conversationId.length > 0) {
     void detailStore.load(conversationId);
   }
+}
+
+/** 提交本地草稿；开始生成后立即清空输入框，消息正文由 started 事件回填。 */
+async function submitMessage(): Promise<void> {
+  const content = draftContent.value;
+  if (!content.trim()) {
+    await detailStore.sendMessage(content);
+    return;
+  }
+  draftContent.value = "";
+  await detailStore.sendMessage(content);
 }
 
 /** 退出时同时清除列表与详情，避免切换账号后留下任何会话内存数据。 */
@@ -162,6 +174,56 @@ watch(
               </article>
             </li>
           </ol>
+        </section>
+
+        <section class="message-composer" aria-labelledby="message-composer-title">
+          <div class="composer-heading">
+            <div>
+              <p class="section-label">继续对话</p>
+              <h2 id="message-composer-title">发送消息</h2>
+            </div>
+            <span v-if="detailStore.isSending" class="composer-streaming" role="status">
+              {{ detailStore.isCancelling ? "正在停止生成…" : "AI 正在生成…" }}
+            </span>
+          </div>
+
+          <form class="message-form" data-test="message-form" @submit.prevent="submitMessage">
+            <label for="message-input">你的问题</label>
+            <textarea
+              id="message-input"
+              v-model="draftContent"
+              data-test="message-input"
+              rows="4"
+              placeholder="例如：请整理这次项目会议的目标、风险和待办事项"
+              :disabled="detailStore.isSending"
+            />
+            <p v-if="detailStore.sendErrorMessage" class="composer-error" role="alert">
+              {{ detailStore.sendErrorMessage }}
+            </p>
+            <div class="composer-actions">
+              <p>Enter 可换行；发送后会逐段显示模型回复。</p>
+              <div>
+                <button
+                  v-if="detailStore.isSending"
+                  class="secondary-button"
+                  data-test="cancel-stream"
+                  type="button"
+                  :disabled="detailStore.isCancelling"
+                  @click="detailStore.cancelActiveStream"
+                >
+                  {{ detailStore.isCancelling ? "正在停止…" : "停止生成" }}
+                </button>
+                <button
+                  class="primary-button send-message-button"
+                  data-test="send-message"
+                  type="submit"
+                  :disabled="detailStore.isSending || !detailStore.hasLoaded"
+                >
+                  {{ detailStore.isSending ? "正在生成…" : "发送消息" }}
+                </button>
+              </div>
+            </div>
+          </form>
         </section>
       </template>
     </main>

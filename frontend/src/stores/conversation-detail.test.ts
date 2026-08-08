@@ -2,14 +2,23 @@ import { createPinia, setActivePinia } from "pinia";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import * as conversationsApi from "@/api/conversations";
+import * as streamApi from "@/api/conversation-stream";
 import { ApiError } from "@/api/client";
-import type { ConversationResponse, MessageResponse } from "@/api/contracts";
+import type {
+  ConversationResponse,
+  MessageResponse,
+  MessageStreamEvent,
+} from "@/api/contracts";
 import { useAuthStore } from "@/stores/auth";
 import { useConversationDetailStore } from "@/stores/conversation-detail";
 
 vi.mock("@/api/conversations", () => ({
   getConversation: vi.fn(),
   listConversationMessages: vi.fn(),
+}));
+
+vi.mock("@/api/conversation-stream", () => ({
+  streamConversationMessage: vi.fn(),
 }));
 
 const firstConversation: ConversationResponse = {
@@ -40,6 +49,31 @@ const firstMessage: MessageResponse = {
   created_at: "2026-08-08T00:01:00Z",
   finished_at: "2026-08-08T00:01:00Z",
 };
+
+const pendingAssistantMessage: MessageResponse = {
+  ...firstMessage,
+  id: "message-2",
+  role: "assistant",
+  content: "",
+  status: "pending",
+  finished_at: null,
+};
+
+const completedAssistantMessage: MessageResponse = {
+  ...pendingAssistantMessage,
+  content: "会议资料已整理完成。",
+  status: "completed",
+  finished_at: "2026-08-08T00:01:02Z",
+};
+
+/** 用数组模拟一次完整、可预测的内部 SSE 业务事件流。 */
+async function* eventStream(
+  events: MessageStreamEvent[],
+): AsyncGenerator<MessageStreamEvent> {
+  for (const event of events) {
+    yield event;
+  }
+}
 
 /** 创建可由测试控制完成时机的 Promise，用于验证并发加载顺序。 */
 function deferred<T>() {
@@ -172,5 +206,115 @@ describe("useConversationDetailStore", () => {
     expect(store.conversation).toBeNull();
     expect(store.messages).toEqual([]);
     expect(store.errorMessage).toBe("登录状态已失效，请重新登录");
+  });
+
+  it("把 started、delta 和 completed 事件转换为最终消息列表", async () => {
+    setAuthenticatedToken();
+    vi.mocked(streamApi.streamConversationMessage).mockReturnValue(
+      eventStream([
+        {
+          type: "started",
+          user_message: { ...firstMessage, content: "整理会议资料" },
+          assistant_message: pendingAssistantMessage,
+        },
+        {
+          type: "delta",
+          message_id: pendingAssistantMessage.id,
+          delta: "会议资料",
+        },
+        {
+          type: "delta",
+          message_id: pendingAssistantMessage.id,
+          delta: "已整理完成。",
+        },
+        { type: "completed", message: completedAssistantMessage },
+      ]),
+    );
+    const store = useConversationDetailStore();
+    store.conversationId = "conversation-1";
+    store.hasLoaded = true;
+
+    await store.sendMessage("  整理会议资料  ");
+
+    expect(streamApi.streamConversationMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: "conversation-1",
+        content: "整理会议资料",
+        token: "access-token",
+      }),
+    );
+    expect(store.messages).toEqual([
+      { ...firstMessage, content: "整理会议资料" },
+      completedAssistantMessage,
+    ]);
+    expect(store.isSending).toBe(false);
+    expect(store.sendErrorMessage).toBeNull();
+  });
+
+  it("error 终点保留失败助手消息，并显示安全错误", async () => {
+    setAuthenticatedToken();
+    const failedAssistantMessage: MessageResponse = {
+      ...pendingAssistantMessage,
+      status: "failed",
+      error_code: "MODEL_TIMEOUT",
+      error_message: "模型响应超时，请稍后重试",
+      finished_at: "2026-08-08T00:01:03Z",
+    };
+    vi.mocked(streamApi.streamConversationMessage).mockReturnValue(
+      eventStream([
+        {
+          type: "started",
+          user_message: firstMessage,
+          assistant_message: pendingAssistantMessage,
+        },
+        { type: "error", message: failedAssistantMessage },
+      ]),
+    );
+    const store = useConversationDetailStore();
+    store.conversationId = "conversation-1";
+    store.hasLoaded = true;
+
+    await store.sendMessage("整理会议资料");
+
+    expect(store.messages.at(-1)).toEqual(failedAssistantMessage);
+    expect(store.sendErrorMessage).toBe("模型响应超时，请稍后重试");
+    expect(store.isSending).toBe(false);
+  });
+
+  it("取消中的流会把已经开始的助手消息标为已取消", async () => {
+    setAuthenticatedToken();
+    vi.mocked(streamApi.streamConversationMessage).mockImplementation((input) =>
+      (async function* (): AsyncGenerator<MessageStreamEvent> {
+        yield {
+          type: "started",
+          user_message: firstMessage,
+          assistant_message: pendingAssistantMessage,
+        };
+        await new Promise<never>((_resolve, reject) => {
+          input.signal?.addEventListener(
+            "abort",
+            () => reject(new DOMException("请求已取消", "AbortError")),
+            { once: true },
+          );
+        });
+      })(),
+    );
+    const store = useConversationDetailStore();
+    store.conversationId = "conversation-1";
+    store.hasLoaded = true;
+
+    const sending = store.sendMessage("整理会议资料");
+    await vi.waitFor(() => {
+      expect(store.messages).toHaveLength(2);
+    });
+    store.cancelActiveStream();
+    await sending;
+
+    expect(store.messages.at(-1)).toMatchObject({
+      id: pendingAssistantMessage.id,
+      status: "cancelled",
+    });
+    expect(store.isSending).toBe(false);
+    expect(store.isCancelling).toBe(false);
   });
 });

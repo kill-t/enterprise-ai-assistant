@@ -4,13 +4,22 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryHistory, createRouter } from "vue-router";
 
 import * as conversationsApi from "@/api/conversations";
-import type { ConversationResponse, MessageResponse } from "@/api/contracts";
+import * as streamApi from "@/api/conversation-stream";
+import type {
+  ConversationResponse,
+  MessageResponse,
+  MessageStreamEvent,
+} from "@/api/contracts";
 import { useAuthStore } from "@/stores/auth";
 import ConversationDetailView from "@/views/ConversationDetailView.vue";
 
 vi.mock("@/api/conversations", () => ({
   getConversation: vi.fn(),
   listConversationMessages: vi.fn(),
+}));
+
+vi.mock("@/api/conversation-stream", () => ({
+  streamConversationMessage: vi.fn(),
 }));
 
 const conversation: ConversationResponse = {
@@ -48,6 +57,15 @@ const messages: MessageResponse[] = [
     finished_at: "2026-08-08T00:01:02Z",
   },
 ];
+
+/** 用固定事件序列模拟模型逐段生成，不依赖真实 SSE 网络连接。 */
+async function* eventStream(
+  events: MessageStreamEvent[],
+): AsyncGenerator<MessageStreamEvent> {
+  for (const event of events) {
+    yield event;
+  }
+}
 
 /** 挂载详情页并将当前路径交给真实 Vue Router 解析。 */
 async function mountConversationDetailView(initialPath = "/conversations/conversation-1") {
@@ -160,5 +178,63 @@ describe("ConversationDetailView", () => {
 
     expect(wrapper.get("h1").text()).toBe("产品评审准备");
     expect(wrapper.text()).toContain("评审目标是什么？");
+  });
+
+  it("提交问题后显示 started、delta 和 completed 产生的新消息", async () => {
+    vi.mocked(conversationsApi.getConversation).mockResolvedValue(conversation);
+    vi.mocked(conversationsApi.listConversationMessages).mockResolvedValue(messages);
+    const pendingAssistant: MessageResponse = {
+      ...messages[1],
+      id: "message-4",
+      content: "",
+      status: "pending",
+      finished_at: null,
+    };
+    const completedAssistant: MessageResponse = {
+      ...pendingAssistant,
+      content: "会议简报已开始整理。",
+      status: "completed",
+      finished_at: "2026-08-08T00:02:00Z",
+    };
+    vi.mocked(streamApi.streamConversationMessage).mockReturnValue(
+      eventStream([
+        {
+          type: "started",
+          user_message: {
+            ...messages[0],
+            id: "message-3",
+            content: "请整理会议简报",
+          },
+          assistant_message: pendingAssistant,
+        },
+        {
+          type: "delta",
+          message_id: pendingAssistant.id,
+          delta: "会议简报已开始整理。",
+        },
+        { type: "completed", message: completedAssistant },
+      ]),
+    );
+
+    const { wrapper } = await mountConversationDetailView();
+    await flushPromises();
+    await wrapper.get('[data-test="message-input"]').setValue(" 请整理会议简报 ");
+    await wrapper.get('[data-test="message-form"]').trigger("submit");
+    await flushPromises();
+
+    expect(streamApi.streamConversationMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: "conversation-1",
+        content: "请整理会议简报",
+        token: "access-token",
+      }),
+    );
+    expect(wrapper.get('[data-test="message-list"]').text()).toContain(
+      "会议简报已开始整理。",
+    );
+    expect(
+      (wrapper.get('[data-test="message-input"]').element as HTMLTextAreaElement)
+        .value,
+    ).toBe("");
   });
 });
