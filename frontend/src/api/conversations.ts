@@ -3,6 +3,7 @@ import type {
   ConversationCreateInput,
   ConversationResponse,
   ConversationUpdateInput,
+  MessageResponse,
 } from "@/api/contracts";
 
 export interface ListConversationsOptions {
@@ -24,6 +25,31 @@ export async function listConversations(
     method: "GET",
     token,
   });
+}
+
+/** 读取单个会话的元数据；后端会同时验证当前用户是否拥有该会话。 */
+export async function getConversation(
+  token: string,
+  conversationId: string,
+): Promise<ConversationResponse> {
+  return requestJson<ConversationResponse>(conversationPath(conversationId), {
+    method: "GET",
+    token,
+  });
+}
+
+/** 按后端创建时间顺序读取指定会话已经持久化的全部消息。 */
+export async function listConversationMessages(
+  token: string,
+  conversationId: string,
+): Promise<MessageResponse[]> {
+  return requestJson<MessageResponse[]>(
+    `${conversationPath(conversationId)}/messages`,
+    {
+      method: "GET",
+      token,
+    },
+  );
 }
 
 /** 创建一个属于当前 Token 对应用户的新会话。 */

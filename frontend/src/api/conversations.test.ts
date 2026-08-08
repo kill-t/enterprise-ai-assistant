@@ -3,7 +3,9 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
   createConversation,
   deleteConversation,
+  getConversation,
   listConversations,
+  listConversationMessages,
   updateConversation,
 } from "@/api/conversations";
 
@@ -16,6 +18,18 @@ const conversation = {
   is_archived: false,
   created_at: "2026-08-08T00:00:00Z",
   updated_at: "2026-08-08T00:00:00Z",
+};
+
+const message = {
+  id: "message-1",
+  role: "assistant" as const,
+  content: "会议资料已经整理完成。",
+  model_name: "gpt-5",
+  status: "completed" as const,
+  error_code: null,
+  error_message: null,
+  created_at: "2026-08-08T00:01:00Z",
+  finished_at: "2026-08-08T00:01:02Z",
 };
 
 afterEach(() => {
@@ -79,6 +93,38 @@ describe("会话 API Client", () => {
       model_name: "gpt-5",
       temperature: 0.7,
     });
+  });
+
+  it("读取会话详情和历史消息时复用编码后的会话路径", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify(conversation), { status: 200 }),
+      )
+      .mockResolvedValueOnce(
+        new Response(JSON.stringify([message]), { status: 200 }),
+      );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const detail = await getConversation("access-token", "会议 / 1");
+    const messages = await listConversationMessages(
+      "access-token",
+      "会议 / 1",
+    );
+
+    expect(detail).toEqual(conversation);
+    expect(messages).toEqual([message]);
+    expect(fetchMock.mock.calls[0][0]).toBe(
+      "/api/v1/conversations/%E4%BC%9A%E8%AE%AE%20%2F%201",
+    );
+    expect(fetchMock.mock.calls[0][1]).toMatchObject({ method: "GET" });
+    expect(fetchMock.mock.calls[1][0]).toBe(
+      "/api/v1/conversations/%E4%BC%9A%E8%AE%AE%20%2F%201/messages",
+    );
+    expect(fetchMock.mock.calls[1][1]).toMatchObject({ method: "GET" });
+    expect(
+      new Headers(fetchMock.mock.calls[1][1].headers).get("Authorization"),
+    ).toBe("Bearer access-token");
   });
 
   it("更新和删除会话时正确编码路径，并处理 204 空响应", async () => {

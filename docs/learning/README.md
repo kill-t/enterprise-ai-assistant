@@ -34,3 +34,4 @@
 28. [Vue 会话 API Client 与数据契约](28-vue-conversation-api-client.md)
 29. [Vue 会话状态 Store](29-vue-conversation-store.md)
 30. [Vue 会话列表页面与新建会话](30-vue-conversation-list-page.md)
+31. [Vue 会话详情与历史消息读取协议](31-vue-conversation-detail-api.md)
