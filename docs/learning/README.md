@@ -31,3 +31,4 @@
 25. [流式取消、断线终态与原子状态转换](25-stream-cancellation-state.md)
 26. [Vue3 请求、认证与 SSE 协议底座](26-vue-api-auth-sse-foundation.md)
 27. [Vue 登录页面、会话恢复与路由守卫](27-vue-login-and-route-guard.md)
+28. [Vue 会话 API Client 与数据契约](28-vue-conversation-api-client.md)
