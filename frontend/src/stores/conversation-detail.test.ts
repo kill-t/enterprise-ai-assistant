@@ -15,6 +15,7 @@ import { useConversationDetailStore } from "@/stores/conversation-detail";
 vi.mock("@/api/conversations", () => ({
   getConversation: vi.fn(),
   listConversationMessages: vi.fn(),
+  retryConversationMessage: vi.fn(),
 }));
 
 vi.mock("@/api/conversation-stream", () => ({
@@ -316,5 +317,86 @@ describe("useConversationDetailStore", () => {
     });
     expect(store.isSending).toBe(false);
     expect(store.isCancelling).toBe(false);
+  });
+
+  it("重试时原位切换同一条助手消息，并在完成前禁止重复重试", async () => {
+    setAuthenticatedToken();
+    const failedAssistantMessage: MessageResponse = {
+      ...pendingAssistantMessage,
+      content: "上次回复中断的片段",
+      status: "failed",
+      error_code: "MODEL_TIMEOUT",
+      error_message: "模型响应超时，请稍后重试",
+      finished_at: "2026-08-08T00:01:03Z",
+    };
+    const completedRetryMessage: MessageResponse = {
+      ...failedAssistantMessage,
+      content: "重试后会议资料已经整理完成。",
+      status: "completed",
+      error_code: null,
+      error_message: null,
+      finished_at: "2026-08-08T00:01:06Z",
+    };
+    const retryRequest = deferred<MessageResponse>();
+    vi.mocked(conversationsApi.retryConversationMessage).mockReturnValue(
+      retryRequest.promise,
+    );
+    const store = useConversationDetailStore();
+    store.conversationId = "conversation-1";
+    store.hasLoaded = true;
+    store.messages = [firstMessage, failedAssistantMessage];
+
+    const retrying = store.retryMessage(failedAssistantMessage.id);
+
+    expect(store.messages.at(-1)).toMatchObject({
+      id: failedAssistantMessage.id,
+      status: "pending",
+      content: "",
+      error_code: null,
+      error_message: null,
+    });
+    expect(store.isRetryingMessage(failedAssistantMessage.id)).toBe(true);
+    await expect(store.retryMessage(failedAssistantMessage.id)).resolves.toBeUndefined();
+
+    retryRequest.resolve(completedRetryMessage);
+    await retrying;
+
+    expect(conversationsApi.retryConversationMessage).toHaveBeenCalledWith(
+      "access-token",
+      "conversation-1",
+      failedAssistantMessage.id,
+    );
+    expect(store.messages.at(-1)).toEqual(completedRetryMessage);
+    expect(store.isRetryingMessage(failedAssistantMessage.id)).toBe(false);
+  });
+
+  it("重试请求失败时恢复原消息，并保存本次重试错误", async () => {
+    setAuthenticatedToken();
+    const failedAssistantMessage: MessageResponse = {
+      ...pendingAssistantMessage,
+      content: "上次回复中断的片段",
+      status: "failed",
+      error_code: "MODEL_TIMEOUT",
+      error_message: "模型响应超时，请稍后重试",
+      finished_at: "2026-08-08T00:01:03Z",
+    };
+    vi.mocked(conversationsApi.retryConversationMessage).mockRejectedValue(
+      new ApiError("重试服务暂时不可用", {
+        status: 503,
+        code: "SERVICE_UNAVAILABLE",
+      }),
+    );
+    const store = useConversationDetailStore();
+    store.conversationId = "conversation-1";
+    store.hasLoaded = true;
+    store.messages = [firstMessage, failedAssistantMessage];
+
+    await store.retryMessage(failedAssistantMessage.id);
+
+    expect(store.messages.at(-1)).toEqual(failedAssistantMessage);
+    expect(store.retryErrorMessages[failedAssistantMessage.id]).toBe(
+      "重试服务暂时不可用",
+    );
+    expect(store.isRetryingMessage(failedAssistantMessage.id)).toBe(false);
   });
 });

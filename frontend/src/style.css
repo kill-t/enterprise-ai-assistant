@@ -626,6 +626,28 @@ textarea {
   line-height: 1.6;
 }
 
+.message-retry-button {
+  margin-top: 14px;
+  padding: 7px 11px;
+  border: 1px solid #c8ded4;
+  border-radius: 9px;
+  color: #256250;
+  background: #f7fcf9;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.message-retry-button:hover:not(:disabled) {
+  border-color: #87b7a5;
+  background: #eaf5ef;
+}
+
+.message-retry-button:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
 .message-composer {
   margin-top: 20px;
   padding: clamp(24px, 5vw, 36px);

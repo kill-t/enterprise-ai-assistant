@@ -6,6 +6,7 @@ import {
   getConversation,
   listConversations,
   listConversationMessages,
+  retryConversationMessage,
   updateConversation,
 } from "@/api/conversations";
 
@@ -125,6 +126,34 @@ describe("会话 API Client", () => {
     expect(
       new Headers(fetchMock.mock.calls[1][1].headers).get("Authorization"),
     ).toBe("Bearer access-token");
+  });
+
+  it("重试消息时使用 POST，并返回同一条助手消息的最终状态", async () => {
+    const retriedMessage = {
+      ...message,
+      status: "completed",
+      content: "重试后会议资料已经整理完成。",
+    };
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(retriedMessage), { status: 200 }),
+    );
+    vi.stubGlobal("fetch", fetchMock);
+
+    const result = await retryConversationMessage(
+      "access-token",
+      "会议 / 1",
+      "消息 / 1",
+    );
+
+    expect(result).toEqual(retriedMessage);
+    expect(fetchMock).toHaveBeenCalledWith(
+      "/api/v1/conversations/%E4%BC%9A%E8%AE%AE%20%2F%201/messages/%E6%B6%88%E6%81%AF%20%2F%201/retry",
+      expect.objectContaining({ method: "POST" }),
+    );
+    const [, options] = fetchMock.mock.calls[0];
+    expect(new Headers(options.headers).get("Authorization")).toBe(
+      "Bearer access-token",
+    );
   });
 
   it("更新和删除会话时正确编码路径，并处理 204 空响应", async () => {

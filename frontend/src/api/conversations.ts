@@ -15,6 +15,11 @@ function conversationPath(conversationId: string): string {
   return `/api/v1/conversations/${encodeURIComponent(conversationId)}`;
 }
 
+/** 复用会话路径并编码消息 ID，确保重试目标始终是单条原消息。 */
+function messagePath(conversationId: string, messageId: string): string {
+  return `${conversationPath(conversationId)}/messages/${encodeURIComponent(messageId)}`;
+}
+
 /** 读取当前用户的会话；默认由后端过滤已归档会话。 */
 export async function listConversations(
   token: string,
@@ -47,6 +52,21 @@ export async function listConversationMessages(
     `${conversationPath(conversationId)}/messages`,
     {
       method: "GET",
+      token,
+    },
+  );
+}
+
+/** 请求后端原位重试失败或已取消的助手消息，并返回同一 ID 的最终状态。 */
+export async function retryConversationMessage(
+  token: string,
+  conversationId: string,
+  messageId: string,
+): Promise<MessageResponse> {
+  return requestJson<MessageResponse>(
+    `${messagePath(conversationId, messageId)}/retry`,
+    {
+      method: "POST",
       token,
     },
   );

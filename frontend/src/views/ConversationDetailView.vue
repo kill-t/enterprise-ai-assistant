@@ -2,7 +2,7 @@
 import { ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
-import type { MessageRole, MessageStatus } from "@/api/contracts";
+import type { MessageResponse, MessageRole, MessageStatus } from "@/api/contracts";
 import { useAuthStore } from "@/stores/auth";
 import { useConversationDetailStore } from "@/stores/conversation-detail";
 import { useConversationStore } from "@/stores/conversations";
@@ -33,6 +33,14 @@ function statusLabel(status: MessageStatus): string | null {
     cancelled: "已取消",
   };
   return labels[status] ?? null;
+}
+
+/** 仅失败或取消的助手消息允许重试；重试中仍保留按钮以展示当前状态。 */
+function isRetryableMessage(message: MessageResponse): boolean {
+  return (
+    message.role === "assistant" &&
+    (message.status === "failed" || message.status === "cancelled")
+  );
 }
 
 /** 用本地可读时间展示后端 ISO 值，便于查看历史消息顺序。 */
@@ -171,6 +179,19 @@ watch(
                 </header>
                 <p class="message-content">{{ message.content || "模型未产生正文" }}</p>
                 <p v-if="message.error_message" class="message-error">{{ message.error_message }}</p>
+                <p v-if="detailStore.retryErrorMessages[message.id]" class="message-error">
+                  {{ detailStore.retryErrorMessages[message.id] }}
+                </p>
+                <button
+                  v-if="isRetryableMessage(message) || detailStore.isRetryingMessage(message.id)"
+                  class="message-retry-button"
+                  :data-test="`retry-message-${message.id}`"
+                  type="button"
+                  :disabled="detailStore.isRetryingMessage(message.id) || detailStore.isSending"
+                  @click="detailStore.retryMessage(message.id)"
+                >
+                  {{ detailStore.isRetryingMessage(message.id) ? "正在重试…" : "重试" }}
+                </button>
               </article>
             </li>
           </ol>

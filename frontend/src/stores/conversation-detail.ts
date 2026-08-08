@@ -3,6 +3,7 @@ import { defineStore } from "pinia";
 import {
   getConversation,
   listConversationMessages,
+  retryConversationMessage,
 } from "@/api/conversations";
 import { streamConversationMessage } from "@/api/conversation-stream";
 import { ApiError } from "@/api/client";
@@ -22,6 +23,8 @@ interface ConversationDetailState {
   isSending: boolean;
   isCancelling: boolean;
   sendErrorMessage: string | null;
+  retryingMessageIds: string[];
+  retryErrorMessages: Record<string, string>;
   loadRequestVersion: number;
 }
 
@@ -44,6 +47,11 @@ function getErrorMessage(error: unknown): string {
 /** 将 SSE、网络中断等流式错误转换为发送区域的安全中文提示。 */
 function getSendErrorMessage(error: unknown): string {
   return error instanceof ApiError ? error.message : "消息生成中断，请重试";
+}
+
+/** 将普通重试接口错误保留在对应消息附近，避免与发送错误混淆。 */
+function getRetryErrorMessage(error: unknown): string {
+  return error instanceof ApiError ? error.message : "重试失败，请稍后重试";
 }
 
 /** 识别浏览器主动取消，不把用户点击停止误显示为普通失败。 */
@@ -88,9 +96,16 @@ export const useConversationDetailStore = defineStore("conversation-detail", {
     isSending: false,
     isCancelling: false,
     sendErrorMessage: null,
+    retryingMessageIds: [],
+    retryErrorMessages: {},
     // 仅用于判定异步响应是否仍属于当前请求，不应直接被页面使用。
     loadRequestVersion: 0,
   }),
+  getters: {
+    /** 判断指定消息是否正在原位重试，供对应按钮单独禁用。 */
+    isRetryingMessage: (state) => (messageId: string): boolean =>
+      state.retryingMessageIds.includes(messageId),
+  },
   actions: {
     /** 清空详情数据并使尚未返回的请求失效，防止退出后写回旧用户信息。 */
     reset(): void {
@@ -107,6 +122,8 @@ export const useConversationDetailStore = defineStore("conversation-detail", {
       this.isSending = false;
       this.isCancelling = false;
       this.sendErrorMessage = null;
+      this.retryingMessageIds = [];
+      this.retryErrorMessages = {};
     },
 
     /** 缺少 Token 时不访问受保护接口，同时清理可能残留的详情。 */
@@ -278,6 +295,63 @@ export const useConversationDetailStore = defineStore("conversation-detail", {
       }
       this.isCancelling = true;
       activeStream.controller.abort();
+    },
+
+    /** 原位重试失败或取消的助手消息；请求失败时恢复重试前快照。 */
+    async retryMessage(messageId: string): Promise<void> {
+      const token = useAuthStore().token;
+      const conversationId = this.conversationId;
+      const originalMessage = this.messages.find(
+        (message) => message.id === messageId,
+      );
+      if (
+        !token ||
+        !conversationId ||
+        this.isSending ||
+        this.isRetryingMessage(messageId) ||
+        !originalMessage ||
+        originalMessage.role !== "assistant" ||
+        !["failed", "cancelled"].includes(originalMessage.status)
+      ) {
+        return;
+      }
+
+      const pendingMessage: MessageResponse = {
+        ...originalMessage,
+        content: "",
+        status: "pending",
+        error_code: null,
+        error_message: null,
+        finished_at: null,
+      };
+      this.messages = replaceMessage(this.messages, pendingMessage);
+      this.retryingMessageIds = [...this.retryingMessageIds, messageId];
+      const { [messageId]: _ignoredError, ...otherRetryErrors } =
+        this.retryErrorMessages;
+      this.retryErrorMessages = otherRetryErrors;
+
+      try {
+        const retriedMessage = await retryConversationMessage(
+          token,
+          conversationId,
+          messageId,
+        );
+        if (this.conversationId === conversationId) {
+          this.messages = replaceMessage(this.messages, retriedMessage);
+        }
+      } catch (error) {
+        if (this.conversationId === conversationId) {
+          this.messages = replaceMessage(this.messages, originalMessage);
+          this.retryErrorMessages = {
+            ...this.retryErrorMessages,
+            [messageId]: getRetryErrorMessage(error),
+          };
+        }
+      } finally {
+        this.retryingMessageIds = this.retryingMessageIds.filter(
+          (retryingId) => retryingId !== messageId,
+        );
+      }
     },
   },
 });
