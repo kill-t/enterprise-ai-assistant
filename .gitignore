@@ -18,10 +18,10 @@
 # Frontend
 **/node_modules/
 **/dist/
+**/*.tsbuildinfo
 
 # Editors and operating systems
 **/.vscode/
 **/.idea/
 .DS_Store
 Thumbs.db
-

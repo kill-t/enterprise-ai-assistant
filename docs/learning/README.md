@@ -29,3 +29,4 @@
 23. [Service 流式消息状态与事务边界](23-service-stream-message-state.md)
 24. [FastAPI SSE 流式协议层](24-fastapi-sse-transport.md)
 25. [流式取消、断线终态与原子状态转换](25-stream-cancellation-state.md)
+26. [Vue3 请求、认证与 SSE 协议底座](26-vue-api-auth-sse-foundation.md)
