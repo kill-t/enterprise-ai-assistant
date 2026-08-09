@@ -46,3 +46,4 @@
 40. [MinIO 文档上传、去重与失败补偿](40-minio-document-upload-and-compensation.md)
 41. [文档 Parser 契约与 Token 分块](41-document-parser-and-token-chunking.md)
 42. [Embedding 网关、批处理与配置快照](42-embedding-gateway-and-profile.md)
+43. [文档入库 Worker、原子索引与失败重试](43-document-ingestion-worker.md)

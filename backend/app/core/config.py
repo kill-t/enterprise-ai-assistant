@@ -45,6 +45,20 @@ class EmbeddingSettings(BaseModel):
     max_retries: int = Field(default=2, ge=0, le=10)
 
 
+class RagSettings(BaseModel):
+    """控制文档分块大小和相邻 Chunk 的重叠 Token。"""
+
+    chunk_size_tokens: int = Field(default=600, gt=0)
+    chunk_overlap_tokens: int = Field(default=80, ge=0)
+
+    @model_validator(mode="after")
+    def validate_chunk_budget(self) -> "RagSettings":
+        """保证重叠小于单个 Chunk 上限，避免分块无法前进。"""
+        if self.chunk_overlap_tokens >= self.chunk_size_tokens:
+            raise ValueError("Chunk 重叠 Token 必须小于 Chunk Token 上限")
+        return self
+
+
 class ModelContextSettings(BaseModel):
     """描述模型上下文窗口，以及输入预算必须预留的空间。"""
 
@@ -111,6 +125,9 @@ class WorkerSettings(BaseModel):
     summary_running_timeout_seconds: int = Field(default=600, gt=0)
     summary_dispatch_lease_seconds: int = Field(default=120, gt=0)
     summary_recovery_batch_size: int = Field(default=100, gt=0, le=1000)
+    document_ingestion_queue: str = "document-ingestion"
+    document_retry_base_delay_seconds: int = Field(default=30, gt=0)
+    document_retry_max_delay_seconds: int = Field(default=300, gt=0)
 
     @model_validator(mode="after")
     def validate_time_limits(self) -> "WorkerSettings":
@@ -119,6 +136,11 @@ class WorkerSettings(BaseModel):
             raise ValueError("Worker 软超时必须小于硬超时")
         if self.summary_retry_base_delay_seconds > self.summary_retry_max_delay_seconds:
             raise ValueError("摘要重试基础延迟不能大于最大退避时间")
+        if (
+            self.document_retry_base_delay_seconds
+            > self.document_retry_max_delay_seconds
+        ):
+            raise ValueError("文档入库重试基础延迟不能大于最大退避时间")
         if self.summary_running_timeout_seconds <= self.task_time_limit_seconds:
             raise ValueError("摘要运行超时恢复阈值必须晚于 Celery 硬超时")
         if self.summary_dispatch_lease_seconds < self.summary_recovery_interval_seconds:
@@ -150,6 +172,7 @@ class Settings(BaseSettings):
     redis: RedisSettings
     object_storage: ObjectStorageSettings = ObjectStorageSettings()
     embedding: EmbeddingSettings = EmbeddingSettings()
+    rag: RagSettings = RagSettings()
     auth: AuthSettings = AuthSettings()
     worker: WorkerSettings = WorkerSettings()
     conversation_memory: ConversationMemorySettings = ConversationMemorySettings()

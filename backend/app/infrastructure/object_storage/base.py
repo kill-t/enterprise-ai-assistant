@@ -20,5 +20,9 @@ class BaseObjectStorage(ABC):
         """把指定长度的文件流保存到对象键。"""
 
     @abstractmethod
+    async def get_object(self, object_key: str, max_bytes: int) -> bytes:
+        """下载不超过指定字节数的完整对象。"""
+
+    @abstractmethod
     async def delete_object(self, object_key: str) -> None:
         """删除对象，用于数据库失败后的补偿清理。"""

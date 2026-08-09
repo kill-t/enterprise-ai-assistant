@@ -60,6 +60,30 @@ def test_minio_adapter_passes_stream_metadata_and_delete_key() -> None:
     )
 
 
+def test_minio_adapter_downloads_with_limit_and_releases_connection() -> None:
+    """下载必须限制最大读取量，并始终关闭响应与归还 HTTP 连接。"""
+    storage = build_minio_storage()
+    response = Mock()
+    response.read.return_value = b"meeting notes"
+    storage.client.get_object.return_value = response
+
+    content = asyncio.run(
+        storage.get_object(
+            "users/u/documents/d.txt",
+            max_bytes=13,
+        )
+    )
+
+    assert content == b"meeting notes"
+    storage.client.get_object.assert_called_once_with(
+        bucket_name="enterprise-ai-documents",
+        object_name="users/u/documents/d.txt",
+    )
+    response.read.assert_called_once_with(14)
+    response.close.assert_called_once_with()
+    response.release_conn.assert_called_once_with()
+
+
 def test_compose_declares_visible_minio_container_and_named_volume() -> None:
     """Compose 应使用固定容器名和独立命名卷，便于 Docker Desktop 管理。"""
     compose_path = (

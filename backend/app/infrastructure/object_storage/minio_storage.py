@@ -6,6 +6,9 @@ from typing import BinaryIO
 from minio import Minio
 
 from app.infrastructure.object_storage.base import BaseObjectStorage
+from app.infrastructure.object_storage.errors import (
+    ObjectStorageReadLimitExceededError,
+)
 
 
 class MinioObjectStorage(BaseObjectStorage):
@@ -72,3 +75,29 @@ class MinioObjectStorage(BaseObjectStorage):
             object_name=object_key,
         )
         await asyncio.to_thread(delete)
+
+    async def get_object(self, object_key: str, max_bytes: int) -> bytes:
+        """在线程池下载受限大小对象，并可靠归还底层 HTTP 连接。"""
+        if max_bytes <= 0:
+            raise ValueError("对象下载大小上限必须大于零")
+        return await asyncio.to_thread(
+            self._get_object_sync,
+            object_key,
+            max_bytes,
+        )
+
+    def _get_object_sync(self, object_key: str, max_bytes: int) -> bytes:
+        """读取上限外的一个字节以识别对象是否被替换成超大内容。"""
+        response = self.client.get_object(
+            bucket_name=self.bucket_name,
+            object_name=object_key,
+        )
+        try:
+            content = response.read(max_bytes + 1)
+            if len(content) > max_bytes:
+                raise ObjectStorageReadLimitExceededError("远端对象大小超过文档记录")
+            return content
+        finally:
+            # MinIO 官方示例要求同时 close 与 release_conn，避免连接池泄漏。
+            response.close()
+            response.release_conn()
