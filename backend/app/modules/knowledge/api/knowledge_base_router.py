@@ -3,11 +3,18 @@ from uuid import UUID
 from fastapi import APIRouter, Query, Response, status
 
 from app.modules.identity.dependencies import CurrentUserDep
-from app.modules.knowledge.dependencies import KnowledgeBaseServiceDep
+from app.modules.knowledge.dependencies import (
+    KnowledgeBaseServiceDep,
+    KnowledgeSearchServiceDep,
+)
 from app.modules.knowledge.schema.knowledge_base_schema import (
     KnowledgeBaseCreate,
     KnowledgeBaseResponse,
     KnowledgeBaseUpdate,
+)
+from app.modules.knowledge.schema.knowledge_search_schema import (
+    KnowledgeSearchRequest,
+    KnowledgeSearchResponse,
 )
 
 
@@ -54,6 +61,24 @@ async def get_knowledge_base(
     return await service.get(
         user_id=current_user.id,
         knowledge_base_id=knowledge_base_id,
+    )
+
+
+@router.post(
+    "/{knowledge_base_id}/search",
+    response_model=KnowledgeSearchResponse,
+)
+async def search_knowledge_base(
+    knowledge_base_id: UUID,
+    request: KnowledgeSearchRequest,
+    service: KnowledgeSearchServiceDep,
+    current_user: CurrentUserDep,
+) -> KnowledgeSearchResponse:
+    """在当前用户拥有的知识库中返回达到可靠性阈值的来源 Chunk。"""
+    return await service.search(
+        user_id=current_user.id,
+        knowledge_base_id=knowledge_base_id,
+        request=request,
     )
 
 

@@ -46,10 +46,13 @@ class EmbeddingSettings(BaseModel):
 
 
 class RagSettings(BaseModel):
-    """控制文档分块大小和相邻 Chunk 的重叠 Token。"""
+    """控制文档分块以及向量检索的候选与可靠性边界。"""
 
     chunk_size_tokens: int = Field(default=600, gt=0)
     chunk_overlap_tokens: int = Field(default=80, ge=0)
+    # 初始阈值只用于工程演示，RAG-6 会用评测集重新校准。
+    search_similarity_threshold: float = Field(default=0.2, ge=-1.0, le=1.0)
+    search_candidate_multiplier: int = Field(default=4, ge=1, le=20)
 
     @model_validator(mode="after")
     def validate_chunk_budget(self) -> "RagSettings":

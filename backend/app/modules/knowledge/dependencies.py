@@ -5,6 +5,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.infrastructure.database.session import get_db
+from app.infrastructure.embedding.provider_factory import EmbeddingProviderFactory
 from app.infrastructure.object_storage.base import BaseObjectStorage
 from app.infrastructure.object_storage.provider import get_object_storage
 from app.infrastructure.task_queue.document_ingestion_dispatcher import (
@@ -18,6 +19,9 @@ from app.modules.knowledge.service.document_ingestion_dispatch_service import (
 )
 from app.modules.knowledge.service.document_service import DocumentService
 from app.modules.knowledge.service.knowledge_base_service import KnowledgeBaseService
+from app.modules.knowledge.service.knowledge_search_service import (
+    KnowledgeSearchService,
+)
 
 
 def get_knowledge_base_service(
@@ -54,3 +58,21 @@ def get_document_service(
 
 
 DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
+
+
+def get_knowledge_search_service(
+    db: AsyncSession = Depends(get_db),
+) -> KnowledgeSearchService:
+    """组装只读向量检索服务，默认按知识库快照创建 Embedding Provider。"""
+    return KnowledgeSearchService(
+        db=db,
+        embedding_factory=EmbeddingProviderFactory(),
+        similarity_threshold=settings.rag.search_similarity_threshold,
+        candidate_multiplier=settings.rag.search_candidate_multiplier,
+    )
+
+
+KnowledgeSearchServiceDep = Annotated[
+    KnowledgeSearchService,
+    Depends(get_knowledge_search_service),
+]

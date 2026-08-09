@@ -48,3 +48,4 @@
 42. [Embedding 网关、批处理与配置快照](42-embedding-gateway-and-profile.md)
 43. [文档入库 Worker、原子索引与失败重试](43-document-ingestion-worker.md)
 44. [文档任务投递租约与周期恢复](44-document-ingestion-dispatch-and-recovery.md)
+45. [pgvector 知识检索、可靠性阈值与权限过滤](45-pgvector-knowledge-search.md)
