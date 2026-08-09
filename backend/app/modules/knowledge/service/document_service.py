@@ -52,6 +52,14 @@ class UploadSource(Protocol):
         ...
 
 
+class IngestionDispatchService(Protocol):
+    """描述上传成功后需要的最小持久化任务投递能力。"""
+
+    async def dispatch_if_due(self, job_id: UUID) -> str:
+        """尝试投递任务；Broker 失败时由实现保留 PENDING 状态。"""
+        ...
+
+
 class DocumentService:
     """编排文档校验、对象存储、持久化任务和失败补偿。"""
 
@@ -60,11 +68,13 @@ class DocumentService:
         db: AsyncSession,
         object_storage: BaseObjectStorage,
         max_file_size_bytes: int,
+        ingestion_dispatch_service: IngestionDispatchService | None = None,
     ) -> None:
         """组装当前请求共用的数据库和对象存储依赖。"""
         self.db = db
         self.object_storage = object_storage
         self.max_file_size_bytes = max_file_size_bytes
+        self.ingestion_dispatch_service = ingestion_dispatch_service
         self.knowledge_base_repository = KnowledgeBaseRepository(db)
         self.repository = DocumentRepository(db)
 
@@ -143,11 +153,32 @@ class DocumentService:
             document.id,
             size_bytes,
         )
+        await self._dispatch_ingestion_safely(job.id)
         return DocumentUploadResponse(
             document=DocumentResponse.model_validate(document),
             job_id=job.id,
             job_status=job.status,
         )
+
+    async def _dispatch_ingestion_safely(self, job_id: UUID) -> None:
+        """提交上传后尽力投递；调度异常不能伪装成文件上传失败。"""
+        if self.ingestion_dispatch_service is None:
+            return
+        try:
+            result = await self.ingestion_dispatch_service.dispatch_if_due(job_id)
+            if result != "dispatched":
+                app_logger.warning(
+                    "文档入库任务暂未投递，等待恢复扫描 job_id=%s result=%s",
+                    job_id,
+                    result,
+                )
+        except Exception:
+            # 文件和 PENDING 任务已经提交；回滚这里只清理调度阶段失败的事务状态。
+            await self.db.rollback()
+            app_logger.exception(
+                "文档入库任务调度异常，等待恢复扫描 job_id=%s",
+                job_id,
+            )
 
     async def list_documents(
         self,

@@ -7,6 +7,9 @@ from app.infrastructure.database.session import SessionLocal, engine
 from app.infrastructure.embedding.provider_factory import EmbeddingProviderFactory
 from app.infrastructure.object_storage.provider import get_object_storage
 from app.infrastructure.task_queue.celery_app import celery_app
+from app.infrastructure.task_queue.document_ingestion_dispatcher import (
+    CeleryDocumentIngestionDispatcher,
+)
 from app.modules.knowledge.processing.parser_registry import DocumentParserRegistry
 from app.modules.knowledge.repository.document_index_repository import (
     DocumentIndexRepository,
@@ -16,6 +19,12 @@ from app.modules.knowledge.repository.document_ingestion_job_repository import (
 )
 from app.modules.knowledge.service.document_ingestion_failure_policy import (
     DocumentIngestionFailurePolicy,
+)
+from app.modules.knowledge.service.document_ingestion_dispatch_service import (
+    DocumentIngestionDispatchService,
+)
+from app.modules.knowledge.service.document_ingestion_recovery_service import (
+    DocumentIngestionRecoveryService,
 )
 from app.modules.knowledge.service.document_ingestion_processor import (
     DocumentIngestionProcessor,
@@ -58,6 +67,45 @@ async def _execute_document_ingestion_job(job_id: UUID) -> str:
         await engine.dispose()
 
 
+async def _recover_document_ingestion_jobs() -> dict[str, int]:
+    """组装恢复扫描依赖，并返回本轮任务统计。"""
+    try:
+        async with SessionLocal() as db:
+            job_repository = DocumentIngestionJobRepository(db)
+            document_repository = DocumentIndexRepository(db)
+            dispatch_service = DocumentIngestionDispatchService(
+                db=db,
+                job_repository=job_repository,
+                dispatcher=CeleryDocumentIngestionDispatcher(),
+                dispatch_lease_seconds=(
+                    settings.worker.document_dispatch_lease_seconds
+                ),
+            )
+            recovery_service = DocumentIngestionRecoveryService(
+                db=db,
+                job_repository=job_repository,
+                document_repository=document_repository,
+                dispatch_service=dispatch_service,
+                running_timeout_seconds=(
+                    settings.worker.document_running_timeout_seconds
+                ),
+                stale_retry_delay_seconds=(
+                    settings.worker.document_retry_base_delay_seconds
+                ),
+                batch_size=settings.worker.document_recovery_batch_size,
+            )
+            result = await recovery_service.recover()
+            return {
+                "failed_exhausted": result.failed_exhausted,
+                "requeued_stale": result.requeued_stale,
+                "dispatch_candidates": result.dispatch_candidates,
+                "dispatched": result.dispatched,
+            }
+    finally:
+        # Beat 同样创建独立事件循环，结束时释放该循环拥有的数据库连接。
+        await engine.dispose()
+
+
 @celery_app.task(name="knowledge.process_document_ingestion_job", ignore_result=True)
 def process_document_ingestion_job(job_id: str) -> str:
     """把 Celery 同步消息桥接到异步文档入库 Worker。"""
@@ -67,3 +115,9 @@ def process_document_ingestion_job(job_id: str) -> str:
         app_logger.warning("收到非法文档入库任务 ID，已跳过 job_id=%s", job_id)
         return "invalid_job_id"
     return asyncio.run(_execute_document_ingestion_job(parsed_job_id))
+
+
+@celery_app.task(name="knowledge.recover_document_ingestion_jobs", ignore_result=True)
+def recover_document_ingestion_jobs() -> dict[str, int]:
+    """周期扫描 PostgreSQL，恢复卡死并重投到期文档任务。"""
+    return asyncio.run(_recover_document_ingestion_jobs())

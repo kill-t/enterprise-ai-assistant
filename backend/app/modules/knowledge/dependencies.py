@@ -7,6 +7,15 @@ from app.core.config import settings
 from app.infrastructure.database.session import get_db
 from app.infrastructure.object_storage.base import BaseObjectStorage
 from app.infrastructure.object_storage.provider import get_object_storage
+from app.infrastructure.task_queue.document_ingestion_dispatcher import (
+    CeleryDocumentIngestionDispatcher,
+)
+from app.modules.knowledge.repository.document_ingestion_job_repository import (
+    DocumentIngestionJobRepository,
+)
+from app.modules.knowledge.service.document_ingestion_dispatch_service import (
+    DocumentIngestionDispatchService,
+)
 from app.modules.knowledge.service.document_service import DocumentService
 from app.modules.knowledge.service.knowledge_base_service import KnowledgeBaseService
 
@@ -29,10 +38,18 @@ def get_document_service(
     object_storage: BaseObjectStorage = Depends(get_object_storage),
 ) -> DocumentService:
     """组装文档服务及其数据库、对象存储和上传大小配置。"""
+    job_repository = DocumentIngestionJobRepository(db)
+    dispatch_service = DocumentIngestionDispatchService(
+        db=db,
+        job_repository=job_repository,
+        dispatcher=CeleryDocumentIngestionDispatcher(),
+        dispatch_lease_seconds=settings.worker.document_dispatch_lease_seconds,
+    )
     return DocumentService(
         db=db,
         object_storage=object_storage,
         max_file_size_bytes=settings.object_storage.max_file_size_bytes,
+        ingestion_dispatch_service=dispatch_service,
     )
 
 

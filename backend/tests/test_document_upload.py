@@ -58,9 +58,22 @@ def test_upload_creates_object_document_and_pending_job_atomically() -> None:
     user_id = uuid4()
     knowledge_base = build_knowledge_base(user_id=user_id)
     document, job = build_document_and_job(knowledge_base_id=knowledge_base.id)
-    db = SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock())
+    events: list[str] = []
+    db = SimpleNamespace(
+        commit=AsyncMock(side_effect=lambda: events.append("commit")),
+        rollback=AsyncMock(),
+    )
     storage = build_storage()
-    service = build_service(db=db, storage=storage)
+    dispatch_service = SimpleNamespace(
+        dispatch_if_due=AsyncMock(
+            side_effect=lambda job_id: events.append("dispatch") or "dispatched"
+        )
+    )
+    service = build_service(
+        db=db,
+        storage=storage,
+        dispatch_service=dispatch_service,
+    )
     service.knowledge_base_repository = SimpleNamespace(
         get_by_id_for_user=AsyncMock(return_value=knowledge_base)
     )
@@ -90,6 +103,43 @@ def test_upload_creates_object_document_and_pending_job_atomically() -> None:
     assert str(knowledge_base.id) in put_kwargs["object_key"]
     db.commit.assert_awaited_once_with()
     db.rollback.assert_not_awaited()
+    dispatch_service.dispatch_if_due.assert_awaited_once_with(job.id)
+    assert events == ["commit", "dispatch"]
+
+
+def test_upload_remains_successful_when_scheduling_raises_after_commit() -> None:
+    """数据库已提交后，即使调度内部异常也应保留 PENDING 任务并返回上传成功。"""
+    user_id = uuid4()
+    knowledge_base = build_knowledge_base(user_id=user_id)
+    document, job = build_document_and_job(knowledge_base_id=knowledge_base.id)
+    db = SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock())
+    dispatch_service = SimpleNamespace(
+        dispatch_if_due=AsyncMock(side_effect=RuntimeError("调度数据库异常"))
+    )
+    service = build_service(
+        db=db,
+        dispatch_service=dispatch_service,
+    )
+    service.knowledge_base_repository = SimpleNamespace(
+        get_by_id_for_user=AsyncMock(return_value=knowledge_base)
+    )
+    service.repository = SimpleNamespace(
+        get_by_sha256_for_knowledge_base=AsyncMock(return_value=None),
+        create_with_job=AsyncMock(return_value=(document, job)),
+    )
+
+    response = asyncio.run(
+        service.upload(
+            user_id=user_id,
+            knowledge_base_id=knowledge_base.id,
+            upload=FakeUpload(b"meeting notes"),
+        )
+    )
+
+    assert response.job_id == job.id
+    assert response.job_status == DocumentIngestionJobStatus.PENDING
+    db.commit.assert_awaited_once_with()
+    db.rollback.assert_awaited_once_with()
 
 
 def test_upload_rejects_archived_knowledge_base_before_reading_file() -> None:
@@ -437,12 +487,14 @@ def build_service(
     db=None,
     storage=None,
     max_file_size_bytes: int = 20 * 1024 * 1024,
+    dispatch_service=None,
 ) -> DocumentService:
     """构造不连接真实基础设施的文档 Service 测试对象。"""
     return DocumentService(
         db=db or SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock()),
         object_storage=storage or build_storage(),
         max_file_size_bytes=max_file_size_bytes,
+        ingestion_dispatch_service=dispatch_service,
     )
 
 

@@ -60,7 +60,7 @@ Set-Location backend
 .\.venv\Scripts\python.exe -m alembic upgrade head
 ```
 
-### 3. 启动后端和前端
+### 3. 启动后端、Worker、Beat 和前端
 
 Windows 下 psycopg 异步驱动需要 Selector 事件循环，因此使用项目提供的本地启动入口：
 
@@ -68,11 +68,20 @@ Windows 下 psycopg 异步驱动需要 Selector 事件循环，因此使用项�
 # 终端一：backend 目录
 .\.venv\Scripts\python.exe -m app.local_server
 
-# 终端二：仓库根目录
+# 终端二：backend 目录；Windows 使用 solo pool，同时消费摘要和文档队列
+.\.venv\Scripts\celery.exe -A app.infrastructure.task_queue.celery_app:celery_app worker --loglevel=INFO --pool=solo --queues=conversation-summary,document-ingestion
+
+# 终端三：backend 目录；周期恢复遗失或到期任务
+.\.venv\Scripts\celery.exe -A app.infrastructure.task_queue.celery_app:celery_app beat --loglevel=INFO
+
+# 终端四：仓库根目录
 Set-Location frontend
 npm install
 npm run dev
 ```
+
+只体验基础聊天时可以暂不启动 Worker 和 Beat；上传文档并自动入库时必须启动它们。
+PostgreSQL 保存任务真实状态，Redis 只负责传送 Celery 消息。
 
 打开 [http://127.0.0.1:5173](http://127.0.0.1:5173)，先注册账号，再体验会话、流式
 回复和会话管理。后端健康检查为 [http://127.0.0.1:8000/health](http://127.0.0.1:8000/health)，

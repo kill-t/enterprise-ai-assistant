@@ -287,7 +287,8 @@ knowledge.process_document_ingestion_job
 
 ### 文档一直是 PENDING
 
-当前 RAG-3A 尚未把上传后的任务投递到 Broker。完成 RAG-3B 后按顺序检查：
+如果只查看 RAG-3A 的提交，上传后的任务尚未投递。当前项目已在下一模块完成 RAG-3B，
+可以按顺序检查：
 
 ```text
 数据库 job 是否 PENDING
@@ -298,8 +299,8 @@ knowledge.process_document_ingestion_job
 
 ### 文档一直是 PROCESSING
 
-说明 Worker 已取得执行权，但进程可能在处理期间退出。下一模块会根据 `started_at` 扫描
-超时 RUNNING 并重排或失败。
+说明 Worker 已取得执行权，但进程可能在处理期间退出。当前恢复扫描会根据 `started_at`
+识别超时 RUNNING，并重新排队或永久失败。
 
 ### 任务成功但没有 Chunk
 

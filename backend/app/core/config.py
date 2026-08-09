@@ -128,6 +128,10 @@ class WorkerSettings(BaseModel):
     document_ingestion_queue: str = "document-ingestion"
     document_retry_base_delay_seconds: int = Field(default=30, gt=0)
     document_retry_max_delay_seconds: int = Field(default=300, gt=0)
+    document_recovery_interval_seconds: int = Field(default=60, gt=0)
+    document_running_timeout_seconds: int = Field(default=900, gt=0)
+    document_dispatch_lease_seconds: int = Field(default=120, gt=0)
+    document_recovery_batch_size: int = Field(default=100, gt=0, le=1000)
 
     @model_validator(mode="after")
     def validate_time_limits(self) -> "WorkerSettings":
@@ -145,6 +149,13 @@ class WorkerSettings(BaseModel):
             raise ValueError("摘要运行超时恢复阈值必须晚于 Celery 硬超时")
         if self.summary_dispatch_lease_seconds < self.summary_recovery_interval_seconds:
             raise ValueError("摘要投递租约不能短于恢复扫描周期")
+        if self.document_running_timeout_seconds <= self.task_time_limit_seconds:
+            raise ValueError("文档运行超时恢复阈值必须晚于 Celery 硬超时")
+        if (
+            self.document_dispatch_lease_seconds
+            < self.document_recovery_interval_seconds
+        ):
+            raise ValueError("文档投递租约不能短于恢复扫描周期")
         return self
 
 

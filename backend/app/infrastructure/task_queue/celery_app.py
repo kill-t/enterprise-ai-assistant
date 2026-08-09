@@ -22,6 +22,9 @@ def create_celery_app() -> Celery:
             "knowledge.process_document_ingestion_job": {
                 "queue": settings.worker.document_ingestion_queue
             },
+            "knowledge.recover_document_ingestion_jobs": {
+                "queue": settings.worker.document_ingestion_queue
+            },
         },
         task_acks_late=True,
         worker_prefetch_multiplier=1,
@@ -33,7 +36,12 @@ def create_celery_app() -> Celery:
                 "task": "conversation.recover_summary_jobs",
                 "schedule": settings.worker.summary_recovery_interval_seconds,
                 "options": {"queue": settings.worker.default_queue},
-            }
+            },
+            "recover-document-ingestion-jobs": {
+                "task": "knowledge.recover_document_ingestion_jobs",
+                "schedule": settings.worker.document_recovery_interval_seconds,
+                "options": {"queue": settings.worker.document_ingestion_queue},
+            },
         },
         enable_utc=True,
         timezone="UTC",

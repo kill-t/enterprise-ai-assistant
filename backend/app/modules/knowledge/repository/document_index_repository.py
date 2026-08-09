@@ -189,3 +189,55 @@ class DocumentIndexRepository:
             .returning(DocumentEntity.id)
         )
         return await self.db.scalar(statement)
+
+    async def mark_recovery_failed(
+        self,
+        document_ids: list[UUID],
+        failed_at: datetime,
+        error_code: str,
+        error_message: str,
+    ) -> None:
+        """把次数耗尽的卡死任务所关联文档批量同步为 FAILED。"""
+        if not document_ids:
+            return
+        statement = (
+            update(DocumentEntity)
+            .where(
+                DocumentEntity.id.in_(document_ids),
+                DocumentEntity.status == DocumentStatus.PROCESSING,
+            )
+            .values(
+                status=DocumentStatus.FAILED,
+                error_code=error_code,
+                error_message=error_message,
+                finished_at=failed_at,
+                updated_at=failed_at,
+            )
+        )
+        await self.db.execute(statement)
+
+    async def mark_recovery_pending(
+        self,
+        document_ids: list[UUID],
+        updated_at: datetime,
+        error_code: str,
+        error_message: str,
+    ) -> None:
+        """把可重试卡死任务所关联文档批量同步回 PENDING。"""
+        if not document_ids:
+            return
+        statement = (
+            update(DocumentEntity)
+            .where(
+                DocumentEntity.id.in_(document_ids),
+                DocumentEntity.status == DocumentStatus.PROCESSING,
+            )
+            .values(
+                status=DocumentStatus.PENDING,
+                error_code=error_code,
+                error_message=error_message,
+                finished_at=None,
+                updated_at=updated_at,
+            )
+        )
+        await self.db.execute(statement)
