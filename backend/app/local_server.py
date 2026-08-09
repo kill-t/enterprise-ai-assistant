@@ -1,23 +1,10 @@
 """提供 Windows 兼容的本地 FastAPI 启动命令。"""
 
 import asyncio
-import sys
-from collections.abc import Callable
 
 import uvicorn
 
-
-EventLoopFactory = Callable[[], asyncio.AbstractEventLoop]
-
-
-def get_event_loop_factory(
-    platform_name: str | None = None,
-) -> EventLoopFactory | None:
-    """Windows 使用 Selector 事件循环，兼容 psycopg 异步连接。"""
-    current_platform = platform_name or sys.platform
-    if current_platform.startswith("win"):
-        return asyncio.SelectorEventLoop
-    return None
+from app.infrastructure.task_queue.asyncio_runner import get_event_loop_factory
 
 
 def run_local_server() -> None:

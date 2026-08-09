@@ -62,7 +62,8 @@ Set-Location backend
 
 ### 3. 启动后端、Worker、Beat 和前端
 
-Windows 下 psycopg 异步驱动需要 Selector 事件循环，因此使用项目提供的本地启动入口：
+Windows 下 psycopg 异步驱动需要 Selector 事件循环，因此 API 使用项目提供的本地启动
+入口；Celery 任务内部也会通过同一兼容运行器进入异步 Service：
 
 ```powershell
 # 终端一：backend 目录

@@ -244,8 +244,13 @@ document = FAILED
 knowledge.process_document_ingestion_job
 ```
 
-同步 Celery Task 使用 `asyncio.run()` 进入异步 Service。每次结束后主动 dispose SQLAlchemy
-连接池，避免上一次事件循环创建的异步连接被下一个事件循环复用。
+同步 Celery Task 使用项目的 `run_async()` 兼容运行器进入异步 Service。Linux 等平台沿用
+`asyncio.run()`；Windows 显式使用 Selector 事件循环，因为 psycopg 异步驱动不支持默认的
+Proactor 事件循环。每次结束后主动 dispose SQLAlchemy 连接池，避免上一次事件循环创建的
+异步连接被下一个事件循环复用。
+
+兼容运行器位于：
+`backend/app/infrastructure/task_queue/asyncio_runner.py`
 
 文档任务路由到 `document-ingestion` 队列，避免以后大量 PDF 阻塞短会话摘要任务。
 

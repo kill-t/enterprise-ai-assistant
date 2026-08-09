@@ -1,4 +1,3 @@
-import asyncio
 from uuid import UUID
 
 from app.core.config import settings
@@ -6,6 +5,7 @@ from app.core.loggers import app_logger
 from app.infrastructure.database.session import SessionLocal, engine
 from app.infrastructure.llm.provider_factory import ProviderFactory
 from app.infrastructure.task_queue.celery_app import celery_app
+from app.infrastructure.task_queue.asyncio_runner import run_async
 from app.infrastructure.task_queue.summary_job_dispatcher import (
     CelerySummaryJobDispatcher,
 )
@@ -61,7 +61,7 @@ async def _execute_summary_job(job_id: UUID) -> str:
             )
             return await service.execute(job_id)
     finally:
-        # Celery 任务是同步入口，每次 asyncio.run 都会创建并关闭事件循环。
+        # Celery 任务是同步入口，每次兼容运行器都会创建并关闭独立事件循环。
         # 主动释放连接池，避免连接被下一个任务的不同事件循环继续复用。
         await engine.dispose()
 
@@ -99,7 +99,7 @@ async def _recover_summary_jobs() -> dict[str, int]:
                 "dispatched": result.dispatched,
             }
     finally:
-        # 周期任务同样使用独立 asyncio.run，结束时释放当前事件循环的连接池。
+        # 周期任务同样使用独立事件循环，结束时释放当前循环的连接池。
         await engine.dispose()
 
 
@@ -112,10 +112,10 @@ def process_conversation_summary_job(job_id: str) -> str:
         app_logger.warning("收到非法摘要任务 ID，已跳过 job_id=%s", job_id)
         return "invalid_job_id"
 
-    return asyncio.run(_execute_summary_job(parsed_job_id))
+    return run_async(_execute_summary_job(parsed_job_id))
 
 
 @celery_app.task(name="conversation.recover_summary_jobs", ignore_result=True)
 def recover_conversation_summary_jobs() -> dict[str, int]:
     """周期扫描 PostgreSQL，恢复卡死任务并重新投递到期任务。"""
-    return asyncio.run(_recover_summary_jobs())
+    return run_async(_recover_summary_jobs())

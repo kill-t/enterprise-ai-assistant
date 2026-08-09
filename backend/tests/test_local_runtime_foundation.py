@@ -7,6 +7,7 @@ from pydantic import SecretStr
 
 import app.main as main_module
 from app.core.config import AuthSettings
+from app.infrastructure.task_queue.asyncio_runner import run_async
 from app.local_server import get_event_loop_factory
 from app.main import create_app
 
@@ -84,3 +85,13 @@ def test_windows_local_server_uses_selector_event_loop() -> None:
 def test_non_windows_local_server_uses_default_event_loop() -> None:
     """非 Windows 平台保持 Python 默认事件循环，避免额外平台分支。"""
     assert get_event_loop_factory("linux") is None
+
+
+def test_windows_celery_task_uses_selector_event_loop() -> None:
+    """Celery 同步任务桥接异步代码时也必须避开 Windows Proactor 循环。"""
+
+    async def is_selector_loop() -> bool:
+        """在协程内部读取真正运行该任务的事件循环类型。"""
+        return isinstance(asyncio.get_running_loop(), asyncio.SelectorEventLoop)
+
+    assert run_async(is_selector_loop(), platform_name="win32") is True

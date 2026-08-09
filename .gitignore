@@ -14,6 +14,8 @@
 
 # Runtime data
 **/logs/*.log
+**/logs/
+**/celerybeat-schedule*
 **/uploads/
 
 # Frontend

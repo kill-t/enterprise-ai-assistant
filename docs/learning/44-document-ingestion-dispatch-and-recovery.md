@@ -241,7 +241,9 @@ Windows 本地为了简单，可以让一个 solo Worker 同时消费两个队�
 ```
 
 Windows 使用 `--pool=solo` 便于稳定调试。Worker 真正执行任务；Beat 只负责按计划发布恢复
-扫描消息，不能用 Beat 代替 Worker。
+扫描消息，不能用 Beat 代替 Worker。`--pool=solo` 只解决 Windows 的 Celery 进程池兼容性；
+任务函数访问异步 PostgreSQL 时，还会由 `asyncio_runner.run_async()` 显式选择 Selector
+事件循环。两者解决的是不同层面的问题。
 
 ## 11. 关键代码入口
 
@@ -303,6 +305,12 @@ Windows 使用 `--pool=solo` 便于稳定调试。Worker 真正执行任务；Be
 ### Beat 在运行但任务不恢复
 
 Beat 只发送周期消息，仍需要 Worker 消费 `document-ingestion` 队列并执行恢复 Task。
+
+### Windows Worker 报 ProactorEventLoop
+
+如果堆栈包含 `Psycopg cannot use the 'ProactorEventLoop'`，说明同步 Celery 入口绕过了项目的
+兼容运行器。文档入库和会话摘要 Task 都必须使用
+`app.infrastructure.task_queue.asyncio_runner.run_async()`，不能直接调用 `asyncio.run()`。
 
 ## 14. 面试表达
 

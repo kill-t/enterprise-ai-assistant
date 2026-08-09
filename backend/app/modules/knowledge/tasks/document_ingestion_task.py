@@ -1,4 +1,3 @@
-import asyncio
 from uuid import UUID
 
 from app.core.config import settings
@@ -7,6 +6,7 @@ from app.infrastructure.database.session import SessionLocal, engine
 from app.infrastructure.embedding.provider_factory import EmbeddingProviderFactory
 from app.infrastructure.object_storage.provider import get_object_storage
 from app.infrastructure.task_queue.celery_app import celery_app
+from app.infrastructure.task_queue.asyncio_runner import run_async
 from app.infrastructure.task_queue.document_ingestion_dispatcher import (
     CeleryDocumentIngestionDispatcher,
 )
@@ -114,10 +114,10 @@ def process_document_ingestion_job(job_id: str) -> str:
     except ValueError:
         app_logger.warning("收到非法文档入库任务 ID，已跳过 job_id=%s", job_id)
         return "invalid_job_id"
-    return asyncio.run(_execute_document_ingestion_job(parsed_job_id))
+    return run_async(_execute_document_ingestion_job(parsed_job_id))
 
 
 @celery_app.task(name="knowledge.recover_document_ingestion_jobs", ignore_result=True)
 def recover_document_ingestion_jobs() -> dict[str, int]:
     """周期扫描 PostgreSQL，恢复卡死并重投到期文档任务。"""
-    return asyncio.run(_recover_document_ingestion_jobs())
+    return run_async(_recover_document_ingestion_jobs())
