@@ -44,3 +44,4 @@
 38. [RAG 数据地基：pgvector 与四张核心表](38-rag-pgvector-data-foundation.md)
 39. [知识库 CRUD、所有权与事务边界](39-knowledge-base-crud-and-ownership.md)
 40. [MinIO 文档上传、去重与失败补偿](40-minio-document-upload-and-compensation.md)
+41. [文档 Parser 契约与 Token 分块](41-document-parser-and-token-chunking.md)
