@@ -4,6 +4,10 @@ from app.modules.conversation.api.conversation_router import (
     router as conversation_router,
 )
 from app.modules.identity.api.auth_router import router as auth_router
+from app.modules.knowledge.api.document_router import (
+    document_router,
+    knowledge_base_documents_router,
+)
 from app.modules.knowledge.api.knowledge_base_router import (
     router as knowledge_base_router,
 )
@@ -16,3 +20,5 @@ def register_routers(app: FastAPI) -> None:
     app.include_router(auth_router)
     app.include_router(conversation_router)
     app.include_router(knowledge_base_router)
+    app.include_router(knowledge_base_documents_router)
+    app.include_router(document_router)

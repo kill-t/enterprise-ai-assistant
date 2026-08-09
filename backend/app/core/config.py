@@ -18,6 +18,17 @@ class RedisSettings(BaseModel):
     url: str
 
 
+class ObjectStorageSettings(BaseModel):
+    """MinIO 连接、存储桶和文档上传大小配置。"""
+
+    endpoint: str = "localhost:9000"
+    access_key: str = "minioadmin"
+    secret_key: SecretStr = SecretStr("minioadmin")
+    secure: bool = False
+    bucket_name: str = "enterprise-ai-documents"
+    max_file_size_bytes: int = Field(default=20 * 1024 * 1024, gt=0)
+
+
 class ModelContextSettings(BaseModel):
     """描述模型上下文窗口，以及输入预算必须预留的空间。"""
 
@@ -126,6 +137,7 @@ class Settings(BaseSettings):
 
     database: DatabaseSettings
     redis: RedisSettings
+    object_storage: ObjectStorageSettings = ObjectStorageSettings()
     auth: AuthSettings = AuthSettings()
     worker: WorkerSettings = WorkerSettings()
     conversation_memory: ConversationMemorySettings = ConversationMemorySettings()
