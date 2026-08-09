@@ -45,10 +45,12 @@ AUTH__SECRET_KEY=生成的随机值
 
 ```text
 DEFAULT_PROVIDER=mock
+EMBEDDING__PROVIDER=mock
 ```
 
-Mock Provider 仍会走真实数据库、Redis、SSE 和前端状态链路，但不调用外部模型。
-真实模型需要在本机 `.env` 填写对应密钥并切换 Provider；任何密钥都不能提交到 Git。
+聊天 Mock 仍会走真实数据库、Redis、SSE 和前端状态链路；Embedding Mock 会生成稳定的
+1024 维词项哈希向量。两者都不调用外部模型。词项哈希只适合本地测试，不等于真实语义
+检索。真实模型需要在本机 `.env` 填写对应密钥并切换 Provider；任何密钥都不能提交到 Git。
 
 ### 2. 启动基础设施并迁移数据库
 

@@ -6,11 +6,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.exception.business_exception import BusinessException
 from app.common.exception.error_code import ErrorCode
 from app.core.loggers import app_logger
-from app.modules.knowledge.constants import (
-    DEFAULT_EMBEDDING_DIMENSION,
-    DEFAULT_EMBEDDING_MODEL,
-    DEFAULT_EMBEDDING_PROVIDER,
-)
+from app.infrastructure.embedding.provider_factory import EmbeddingProviderFactory
+from app.infrastructure.embedding.schemas import EmbeddingProfile
 from app.modules.knowledge.entity.knowledge_base import KnowledgeBaseEntity
 from app.modules.knowledge.repository.knowledge_base_repository import (
     KnowledgeBaseRepository,
@@ -25,10 +22,17 @@ from app.modules.knowledge.schema.knowledge_base_schema import (
 class KnowledgeBaseService:
     """编排知识库所有权、名称规则和数据库事务。"""
 
-    def __init__(self, db: AsyncSession):
-        """组装当前请求共用的数据库 Session 和 Repository。"""
+    def __init__(
+        self,
+        db: AsyncSession,
+        embedding_profile: EmbeddingProfile | None = None,
+    ) -> None:
+        """组装数据库依赖，并保存新建知识库应使用的 Embedding 快照。"""
         self.db = db
         self.repository = KnowledgeBaseRepository(db)
+        self.embedding_profile = (
+            embedding_profile or EmbeddingProviderFactory().default_profile()
+        )
 
     async def create(
         self,
@@ -41,9 +45,9 @@ class KnowledgeBaseService:
             entity = await self.repository.create(
                 user_id=user_id,
                 request=request,
-                embedding_provider=DEFAULT_EMBEDDING_PROVIDER,
-                embedding_model=DEFAULT_EMBEDDING_MODEL,
-                embedding_dimension=DEFAULT_EMBEDDING_DIMENSION,
+                embedding_provider=self.embedding_profile.provider,
+                embedding_model=self.embedding_profile.model,
+                embedding_dimension=self.embedding_profile.dimension,
             )
             await self.db.commit()
         except IntegrityError as exc:

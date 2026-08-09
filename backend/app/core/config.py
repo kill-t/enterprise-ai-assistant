@@ -29,6 +29,22 @@ class ObjectStorageSettings(BaseModel):
     max_file_size_bytes: int = Field(default=20 * 1024 * 1024, gt=0)
 
 
+class EmbeddingSettings(BaseModel):
+    """控制默认 Embedding Provider、模型、维度和批处理边界。"""
+
+    provider: Literal["mock", "openai_compatible"] = "mock"
+    api_key: SecretStr | None = None
+    base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    model: str = "text-embedding-v4"
+    mock_model: str = "mock-hash-1024"
+    # 第一版数据库列固定为 vector(1024)，配置层直接阻止维度漂移。
+    dimension: Literal[1024] = 1024
+    # text-embedding-v4 官方同步接口单批最多接受 10 条文本。
+    batch_size: int = Field(default=10, gt=0, le=10)
+    timeout_seconds: float = Field(default=30.0, gt=0)
+    max_retries: int = Field(default=2, ge=0, le=10)
+
+
 class ModelContextSettings(BaseModel):
     """描述模型上下文窗口，以及输入预算必须预留的空间。"""
 
@@ -39,7 +55,10 @@ class ModelContextSettings(BaseModel):
     @model_validator(mode="after")
     def validate_token_budget(self) -> "ModelContextSettings":
         """保证系统始终拥有大于零的输入预算。"""
-        if self.max_output_tokens + self.token_safety_margin >= self.context_window_tokens:
+        if (
+            self.max_output_tokens + self.token_safety_margin
+            >= self.context_window_tokens
+        ):
             raise ValueError("输出预留与安全余量必须小于模型上下文窗口")
         return self
 
@@ -71,9 +90,7 @@ class AuthSettings(BaseModel):
     def validate_runtime(self) -> None:
         """在服务启动前校验 JWT 密钥，避免首次登录才暴露配置缺失。"""
         if self.secret_key is None:
-            raise RuntimeError(
-                "未配置 AUTH__SECRET_KEY，无法启动需要身份认证的服务"
-            )
+            raise RuntimeError("未配置 AUTH__SECRET_KEY，无法启动需要身份认证的服务")
 
         # HS256 密钥应至少达到 32 字节；按 UTF-8 字节数而非字符数判断更准确。
         secret_key_bytes = self.secret_key.get_secret_value().encode("utf-8")
@@ -100,17 +117,11 @@ class WorkerSettings(BaseModel):
         """保证软超时早于硬超时，使任务有机会保存失败状态。"""
         if self.task_soft_time_limit_seconds >= self.task_time_limit_seconds:
             raise ValueError("Worker 软超时必须小于硬超时")
-        if (
-            self.summary_retry_base_delay_seconds
-            > self.summary_retry_max_delay_seconds
-        ):
+        if self.summary_retry_base_delay_seconds > self.summary_retry_max_delay_seconds:
             raise ValueError("摘要重试基础延迟不能大于最大退避时间")
         if self.summary_running_timeout_seconds <= self.task_time_limit_seconds:
             raise ValueError("摘要运行超时恢复阈值必须晚于 Celery 硬超时")
-        if (
-            self.summary_dispatch_lease_seconds
-            < self.summary_recovery_interval_seconds
-        ):
+        if self.summary_dispatch_lease_seconds < self.summary_recovery_interval_seconds:
             raise ValueError("摘要投递租约不能短于恢复扫描周期")
         return self
 
@@ -138,6 +149,7 @@ class Settings(BaseSettings):
     database: DatabaseSettings
     redis: RedisSettings
     object_storage: ObjectStorageSettings = ObjectStorageSettings()
+    embedding: EmbeddingSettings = EmbeddingSettings()
     auth: AuthSettings = AuthSettings()
     worker: WorkerSettings = WorkerSettings()
     conversation_memory: ConversationMemorySettings = ConversationMemorySettings()

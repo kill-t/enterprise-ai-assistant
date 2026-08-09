@@ -11,6 +11,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.common.exception.business_exception import BusinessException
 from app.common.exception.error_code import ErrorCode
+from app.infrastructure.embedding.schemas import EmbeddingProfile
 from app.main import create_app
 from app.modules.identity.dependencies import get_current_user
 from app.modules.knowledge.api.knowledge_base_router import create_knowledge_base
@@ -142,6 +143,35 @@ def test_service_create_uses_embedding_snapshot_and_commits() -> None:
     )
     db.commit.assert_awaited_once_with()
     db.rollback.assert_not_awaited()
+
+
+def test_service_create_uses_injected_embedding_profile() -> None:
+    """切换默认 Provider 后，新知识库应冻结注入配置而不是硬编码旧常量。"""
+    user_id = uuid4()
+    entity = build_knowledge_base(user_id=user_id)
+    db = SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock())
+    service = build_service(db=db)
+    service.embedding_profile = EmbeddingProfile(
+        provider="openai_compatible",
+        model="text-embedding-v4",
+        dimension=1024,
+    )
+    service.repository = SimpleNamespace(
+        get_by_name_for_user=AsyncMock(return_value=None),
+        create=AsyncMock(return_value=entity),
+    )
+
+    asyncio.run(
+        service.create(
+            user_id=user_id,
+            request=KnowledgeBaseCreate(name="真实向量知识库"),
+        )
+    )
+
+    create_kwargs = service.repository.create.await_args.kwargs
+    assert create_kwargs["embedding_provider"] == "openai_compatible"
+    assert create_kwargs["embedding_model"] == "text-embedding-v4"
+    assert create_kwargs["embedding_dimension"] == 1024
 
 
 def test_service_rejects_existing_name_before_insert() -> None:
@@ -369,6 +399,11 @@ def build_service(db=None) -> KnowledgeBaseService:
     """构造不连接真实数据库的知识库 Service 测试对象。"""
     service = object.__new__(KnowledgeBaseService)
     service.db = db or SimpleNamespace(commit=AsyncMock(), rollback=AsyncMock())
+    service.embedding_profile = EmbeddingProfile(
+        provider=DEFAULT_EMBEDDING_PROVIDER,
+        model=DEFAULT_EMBEDDING_MODEL,
+        dimension=DEFAULT_EMBEDDING_DIMENSION,
+    )
     return service
 
 
