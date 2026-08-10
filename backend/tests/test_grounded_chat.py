@@ -96,6 +96,10 @@ def test_unbound_conversation_keeps_normal_chat_request() -> None:
         "你好，请介绍一下你自己",
         "Hello, grounded chat.",
     ]
+    assert (
+        service.citation_repository.replace_for_message.await_args.kwargs["sources"]
+        == ()
+    )
 
 
 def test_grounded_chat_sends_numbered_untrusted_sources_to_provider() -> None:
@@ -158,6 +162,10 @@ def test_grounded_chat_sends_numbered_untrusted_sources_to_provider() -> None:
     }
     assert persisted_user_message.content == "发布前需要做什么？"
     knowledge_search_service.search.assert_awaited_once()
+    assert (
+        service.citation_repository.replace_for_message.await_args.kwargs["sources"]
+        == tuple(results)
+    )
 
 
 def test_no_reliable_evidence_completes_refusal_without_calling_chat_model() -> None:
@@ -200,6 +208,10 @@ def test_no_reliable_evidence_completes_refusal_without_calling_chat_model() -> 
         "user",
         "assistant",
     ]
+    assert (
+        service.citation_repository.replace_for_message.await_args.kwargs["sources"]
+        == ()
+    )
 
 
 def test_grounded_sources_are_counted_before_messages_are_persisted() -> None:
@@ -335,6 +347,9 @@ def build_service(
         get_by_id_for_user=AsyncMock(return_value=conversation)
     )
     service.message_repository = message_repository
+    service.citation_repository = SimpleNamespace(
+        replace_for_message=AsyncMock(return_value=[])
+    )
     service.summary_repository = SimpleNamespace(
         get_by_conversation_id=AsyncMock(return_value=None)
     )

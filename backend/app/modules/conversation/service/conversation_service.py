@@ -48,6 +48,9 @@ from app.modules.conversation.repository.conversation_summary_job_repository imp
     ConversationSummaryJobRepository,
 )
 from app.modules.conversation.repository.message_repository import MessageRepository
+from app.modules.conversation.repository.message_citation_repository import (
+    MessageCitationRepository,
+)
 from app.modules.conversation.schema.conversation_schema import (
     ConversationCreate,
     ConversationResponse,
@@ -72,6 +75,7 @@ from app.modules.conversation.service.grounded_prompt_builder import (
 )
 from app.modules.knowledge.schema.knowledge_search_schema import (
     KnowledgeSearchRequest,
+    MultiKnowledgeSearchHit,
 )
 
 
@@ -81,6 +85,7 @@ class _AssistantResponsePlan:
 
     request: ChatRequest | None
     direct_response: ChatResponse | None
+    sources: tuple[MultiKnowledgeSearchHit, ...]
 
 
 @dataclass(frozen=True)
@@ -90,6 +95,7 @@ class _MessageGenerationContext:
     conversation: ConversationEntity
     request: ChatRequest | None
     direct_response: ChatResponse | None
+    sources: tuple[MultiKnowledgeSearchHit, ...]
     user_message: MessageEntity
     assistant_message: MessageEntity
 
@@ -107,6 +113,7 @@ class ConversationService:
         self.db = db
         self.repository = ConversationRepository(db)
         self.message_repository = MessageRepository(db)
+        self.citation_repository = MessageCitationRepository(db)
         self.summary_repository = ConversationSummaryRepository(db)
         self.summary_job_repository = ConversationSummaryJobRepository(db)
         self.memory_manager = memory_manager
@@ -227,6 +234,7 @@ class ConversationService:
                 conversation_id=conversation_id,
                 assistant_message=context.assistant_message,
                 assistant_response=context.direct_response,
+                sources=context.sources,
             )
         if context.request is None:
             raise RuntimeError("非流式消息缺少模型请求和直接响应")
@@ -235,6 +243,7 @@ class ConversationService:
             conversation_id=conversation_id,
             request=context.request,
             assistant_message=context.assistant_message,
+            sources=context.sources,
         )
 
     async def stream_message(
@@ -339,6 +348,7 @@ class ConversationService:
                 conversation_id=conversation_id,
                 assistant_message=assistant_message,
                 assistant_response=terminal_event.response,
+                sources=context.sources,
             )
             yield MessageStreamCompletedEvent(message=completed_message)
         except (asyncio.CancelledError, GeneratorExit):
@@ -380,6 +390,7 @@ class ConversationService:
                     summary_content=summary_content,
                 ),
                 direct_response=None,
+                sources=(),
             )
 
         user_message = MessageEntity(
@@ -410,6 +421,7 @@ class ConversationService:
             conversation=conversation,
             request=response_plan.request,
             direct_response=response_plan.direct_response,
+            sources=response_plan.sources,
             user_message=user_message,
             assistant_message=assistant_message,
         )
@@ -489,6 +501,7 @@ class ConversationService:
                 conversation_id=conversation_id,
                 assistant_message=assistant_message,
                 assistant_response=response_plan.direct_response,
+                sources=response_plan.sources,
             )
         if response_plan.request is None:
             raise RuntimeError("重试消息缺少模型请求和直接响应")
@@ -497,6 +510,7 @@ class ConversationService:
             conversation_id=conversation_id,
             request=response_plan.request,
             assistant_message=assistant_message,
+            sources=response_plan.sources,
         )
 
     async def _build_grounded_response_plan(
@@ -523,6 +537,7 @@ class ConversationService:
                     summary_content=summary_content,
                 ),
                 direct_response=None,
+                sources=(),
             )
 
         if not search_result.results:
@@ -540,6 +555,7 @@ class ConversationService:
                     completion_tokens=0,
                     total_tokens=0,
                 ),
+                sources=(),
             )
 
         base_system_prompt = self.prompt_builder.resolve_system_prompt(
@@ -569,7 +585,11 @@ class ConversationService:
                 ),
             }
         )
-        return _AssistantResponsePlan(request=request, direct_response=None)
+        return _AssistantResponsePlan(
+            request=request,
+            direct_response=None,
+            sources=tuple(search_result.results),
+        )
 
     async def _generate_assistant_response(
         self,
@@ -577,6 +597,7 @@ class ConversationService:
         conversation_id: UUID,
         request: ChatRequest,
         assistant_message: MessageEntity,
+        sources: tuple[MultiKnowledgeSearchHit, ...] = (),
     ) -> MessageResponse:
         """调用模型，并将成功或失败结果写回指定助手消息。"""
 
@@ -590,6 +611,7 @@ class ConversationService:
             conversation_id=conversation_id,
             assistant_message=assistant_message,
             assistant_response=assistant_response,
+            sources=sources,
         )
 
     async def _complete_assistant_response(
@@ -598,8 +620,9 @@ class ConversationService:
         conversation_id: UUID,
         assistant_message: MessageEntity,
         assistant_response: ChatResponse,
+        sources: tuple[MultiKnowledgeSearchHit, ...] = (),
     ) -> MessageResponse:
-        """一次写入完整助手响应，再回填缓存并尽力调度会话摘要。"""
+        """原子保存完整助手响应和引用，再回填缓存并尽力调度摘要。"""
         assistant_message.content = assistant_response.content
         assistant_message.model_name = assistant_response.model
         assistant_message.prompt_tokens = assistant_response.prompt_tokens
@@ -609,13 +632,78 @@ class ConversationService:
         assistant_message.error_code = None
         assistant_message.error_message = None
         assistant_message.finished_at = datetime.now(timezone.utc)
-        await self.message_repository.update(assistant_message)
-        await self._commit()
+        try:
+            await self.message_repository.update(assistant_message)
+            await self.citation_repository.replace_for_message(
+                message_id=assistant_message.id,
+                sources=sources,
+            )
+            await self._commit()
+        except Exception as exc:
+            await self._compensate_completion_failure(assistant_message)
+            raise BusinessException(
+                code=ErrorCode.CITATION_PERSISTENCE_FAILED,
+                message="回答引用保存失败，请稍后重试",
+                status_code=500,
+            ) from exc
         await self._save_to_memory(conversation_id, assistant_message)
         await self._schedule_summary_safely(conversation)
 
-        app_logger.info("助手消息已保存 conversation_id=%s", conversation_id)
+        app_logger.info(
+            "助手消息与引用已保存 conversation_id=%s citation_count=%s",
+            conversation_id,
+            len(sources),
+        )
         return MessageResponse.model_validate(assistant_message)
+
+    async def _compensate_completion_failure(
+        self,
+        assistant_message: MessageEntity,
+    ) -> None:
+        """回滚半套回答后，尽力把数据库中的 PENDING 占位补偿成可重试失败终态。"""
+        error_code = ErrorCode.CITATION_PERSISTENCE_FAILED.value
+        error_message = "回答引用保存失败，请稍后重试"
+        finished_at = datetime.now(timezone.utc)
+        try:
+            # update 或 citation flush 失败时事务已不可继续，必须先回滚再开启补偿事务。
+            await self.db.rollback()
+            updated = await self.message_repository.mark_failed_if_pending(
+                assistant_message.id,
+                error_code=error_code,
+                error_message=error_message,
+                finished_at=finished_at,
+            )
+            await self._commit()
+        except Exception:
+            app_logger.exception(
+                "补偿助手完成失败终态时数据库异常 message_id=%s",
+                assistant_message.id,
+            )
+            try:
+                await self.db.rollback()
+            except Exception:
+                app_logger.exception(
+                    "补偿助手完成失败后回滚异常 message_id=%s",
+                    assistant_message.id,
+                )
+            return
+
+        if not updated:
+            app_logger.warning(
+                "助手占位已有其他终态，跳过完成失败补偿 message_id=%s",
+                assistant_message.id,
+            )
+            return
+
+        # 条件 UPDATE 不同步 ORM 对象；手工更新仅用于当前异常链日志和单元测试可观察性。
+        assistant_message.content = ""
+        assistant_message.prompt_tokens = 0
+        assistant_message.completion_tokens = 0
+        assistant_message.total_tokens = 0
+        assistant_message.status = MessageStatus.FAILED
+        assistant_message.error_code = error_code
+        assistant_message.error_message = error_message
+        assistant_message.finished_at = finished_at
 
     async def _schedule_summary_safely(
         self,

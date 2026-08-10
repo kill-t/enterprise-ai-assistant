@@ -164,6 +164,9 @@ def build_service(provider, event_log: list[str] | None = None):
         get_by_id_for_user=AsyncMock(return_value=conversation)
     )
     service.message_repository = message_repository
+    service.citation_repository = SimpleNamespace(
+        replace_for_message=AsyncMock(return_value=[])
+    )
     service.summary_repository = SimpleNamespace(
         get_by_conversation_id=AsyncMock(return_value=None)
     )

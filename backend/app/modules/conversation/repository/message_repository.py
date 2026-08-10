@@ -63,6 +63,38 @@ class MessageRepository:
         updated_message_id = await self.db.scalar(statement)
         return updated_message_id is not None
 
+    async def mark_failed_if_pending(
+        self,
+        message_id: UUID,
+        *,
+        error_code: str,
+        error_message: str,
+        finished_at: datetime,
+    ) -> bool:
+        """回答完成事务失败后，仅把仍为 PENDING 的占位补偿为 FAILED。"""
+        statement = (
+            update(MessageEntity)
+            .where(
+                MessageEntity.id == message_id,
+                MessageEntity.status == MessageStatus.PENDING,
+            )
+            .values(
+                content="",
+                prompt_tokens=0,
+                completion_tokens=0,
+                total_tokens=0,
+                status=MessageStatus.FAILED,
+                error_code=error_code,
+                error_message=error_message,
+                finished_at=finished_at,
+            )
+            .returning(MessageEntity.id)
+            # 条件 UPDATE 直接以数据库终态为准，不让已回滚的 ORM 对象参与判断。
+            .execution_options(synchronize_session=False)
+        )
+        updated_message_id = await self.db.scalar(statement)
+        return updated_message_id is not None
+
     async def list_by_conversation(
         self,
         conversation_id: UUID,

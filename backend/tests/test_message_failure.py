@@ -103,6 +103,9 @@ def build_retry_service(
         )
     )
     service.message_repository = message_repository
+    service.citation_repository = SimpleNamespace(
+        replace_for_message=AsyncMock(return_value=[])
+    )
     service.summary_repository = SimpleNamespace(
         get_by_conversation_id=AsyncMock(return_value=None)
     )
@@ -268,6 +271,11 @@ def test_retry_reuses_retryable_assistant_message_and_excludes_original_question
     assert [message.content for message in provider.requests[0].messages].count(
         "整理会议待办"
     ) == 1
+    # 重试后的当前路径没有知识库来源，必须整组清空这条消息可能残留的旧引用。
+    service.citation_repository.replace_for_message.assert_awaited_once_with(
+        message_id=retryable_message.id,
+        sources=(),
+    )
     service.summary_job_service.maybe_schedule.assert_awaited_once()
 
 
