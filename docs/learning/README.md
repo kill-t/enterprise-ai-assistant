@@ -50,3 +50,4 @@
 44. [文档任务投递租约与周期恢复](44-document-ingestion-dispatch-and-recovery.md)
 45. [pgvector 知识检索、可靠性阈值与权限过滤](45-pgvector-knowledge-search.md)
 46. [会话知识库绑定与消息引用快照](46-conversation-knowledge-bindings-and-citation-snapshots.md)
+47. [会话知识库绑定 API 与原子替换](47-conversation-knowledge-base-binding-api.md)

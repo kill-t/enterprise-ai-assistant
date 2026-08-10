@@ -10,6 +10,13 @@ from app.modules.conversation.api.sse import (
     close_message_stream,
     iter_sse_frames,
 )
+from app.modules.conversation.dependencies import (
+    ConversationKnowledgeBaseServiceDep,
+)
+from app.modules.conversation.schema.conversation_knowledge_base_schema import (
+    ConversationKnowledgeBaseSelectionResponse,
+    ConversationKnowledgeBaseUpdate,
+)
 from app.modules.conversation.schema.conversation_schema import (
     ConversationCreate,
     ConversationResponse,
@@ -67,6 +74,40 @@ async def get_conversation(
     return await service.get(
         user_id=current_user.id,
         conversation_id=conversation_id,
+    )
+
+
+@router.get(
+    "/{conversation_id}/knowledge-bases",
+    response_model=ConversationKnowledgeBaseSelectionResponse,
+)
+async def get_conversation_knowledge_bases(
+    conversation_id: UUID,
+    service: ConversationKnowledgeBaseServiceDep,
+    current_user: CurrentUserDep,
+) -> ConversationKnowledgeBaseSelectionResponse:
+    """返回当前用户会话已选择的知识库及其最新状态。"""
+    return await service.get_selection(
+        user_id=current_user.id,
+        conversation_id=conversation_id,
+    )
+
+
+@router.put(
+    "/{conversation_id}/knowledge-bases",
+    response_model=ConversationKnowledgeBaseSelectionResponse,
+)
+async def replace_conversation_knowledge_bases(
+    conversation_id: UUID,
+    request: ConversationKnowledgeBaseUpdate,
+    service: ConversationKnowledgeBaseServiceDep,
+    current_user: CurrentUserDep,
+) -> ConversationKnowledgeBaseSelectionResponse:
+    """原子替换当前用户会话的完整知识库选择。"""
+    return await service.replace_selection(
+        user_id=current_user.id,
+        conversation_id=conversation_id,
+        request=request,
     )
 
 

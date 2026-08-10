@@ -61,6 +61,24 @@ class KnowledgeBaseRepository:
         )
         return await self.db.scalar(statement)
 
+    async def list_by_ids_for_user(
+        self,
+        user_id: UUID,
+        knowledge_base_ids: list[UUID],
+        for_update: bool = False,
+    ) -> list[KnowledgeBaseEntity]:
+        """批量读取当前用户的知识库，并可锁定记录保护后续绑定事务。"""
+        if not knowledge_base_ids:
+            return []
+        statement = select(KnowledgeBaseEntity).where(
+            KnowledgeBaseEntity.user_id == user_id,
+            KnowledgeBaseEntity.id.in_(knowledge_base_ids),
+        )
+        if for_update:
+            # 锁定后，并发归档必须等待本次绑定事务结束，避免校验和写入之间状态变化。
+            statement = statement.with_for_update()
+        return list((await self.db.scalars(statement)).all())
+
     async def list_by_user(
         self,
         user_id: UUID,
