@@ -38,6 +38,44 @@ class MessageResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
 
+class MessageCitationResponse(BaseModel):
+    """向前端返回一条回答生成时使用的可追溯来源快照。"""
+
+    id: UUID
+    knowledge_base_id: UUID | None
+    document_id: UUID | None
+    chunk_id: UUID | None
+    knowledge_base_name: str = Field(
+        validation_alias="knowledge_base_name_snapshot"
+    )
+    filename: str = Field(validation_alias="filename_snapshot")
+    chunk_index: int = Field(
+        ge=0,
+        validation_alias="chunk_index_snapshot",
+    )
+    content: str = Field(validation_alias="content_snapshot")
+    heading_path: str | None = Field(
+        validation_alias="heading_path_snapshot"
+    )
+    page_start: int | None
+    page_end: int | None
+    source_order: int = Field(gt=0)
+    score: float = Field(
+        ge=-1.0,
+        le=1.0,
+        validation_alias="retrieval_score",
+    )
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MessageHistoryResponse(MessageResponse):
+    """在基础消息字段上补充按 S1、S2 排序的历史引用。"""
+
+    citations: list[MessageCitationResponse] = Field(default_factory=list)
+
+
 class MessageStreamEventType(str, Enum):
     """区分 Service 流的开始、正文增量、成功完成和失败终点。"""
 

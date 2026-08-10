@@ -57,6 +57,8 @@ from app.modules.conversation.schema.conversation_schema import (
     ConversationUpdate,
 )
 from app.modules.conversation.schema.message_schema import (
+    MessageCitationResponse,
+    MessageHistoryResponse,
     MessageResponse,
     MessageStreamCompletedEvent,
     MessageStreamDeltaEvent,
@@ -768,11 +770,31 @@ class ConversationService:
         self,
         user_id: UUID,
         conversation_id: UUID,
-    ) -> list[MessageResponse]:
-        """返回全部消息，使前端能够展示 pending 和 failed 状态。"""
+    ) -> list[MessageHistoryResponse]:
+        """返回全部消息及引用快照，并通过批量查询避免 N+1。"""
         await self._get_owned_conversation(user_id, conversation_id)
         entities = await self.message_repository.list_by_conversation(conversation_id)
-        return [MessageResponse.model_validate(entity) for entity in entities]
+        message_ids = tuple(entity.id for entity in entities)
+        citations = await self.citation_repository.list_by_message_ids(message_ids)
+
+        citations_by_message: dict[UUID, list[MessageCitationResponse]] = {}
+        for citation in citations:
+            citations_by_message.setdefault(citation.message_id, []).append(
+                MessageCitationResponse.model_validate(citation)
+            )
+
+        # Repository 已按来源序号排序；这里再次排序可防止测试替身或未来数据源打乱 S1/S2。
+        for grouped_citations in citations_by_message.values():
+            grouped_citations.sort(key=lambda item: item.source_order)
+
+        return [
+            MessageHistoryResponse.model_validate(entity).model_copy(
+                update={
+                    "citations": citations_by_message.get(entity.id, []),
+                }
+            )
+            for entity in entities
+        ]
 
     async def _get_owned_conversation(
         self,

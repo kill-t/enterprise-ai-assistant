@@ -54,3 +54,4 @@
 48. [会话多知识库检索聚合](48-conversation-multi-knowledge-search.md)
 49. [Grounded Prompt 与无证据拒答](49-grounded-prompt-and-no-evidence-refusal.md)
 50. [消息引用快照与原子持久化](50-message-citation-atomic-persistence.md)
+51. [历史消息引用读取协议](51-history-message-citation-protocol.md)

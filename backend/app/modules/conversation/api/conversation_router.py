@@ -24,6 +24,7 @@ from app.modules.conversation.schema.conversation_schema import (
 )
 from app.modules.conversation.schema.message_schema import (
     MessageCreate,
+    MessageHistoryResponse,
     MessageResponse,
     MessageStreamStartedEvent,
 )
@@ -217,13 +218,13 @@ async def stream_message(
 
 @router.get(
     "/{conversation_id}/messages",
-    response_model=list[MessageResponse],
+    response_model=list[MessageHistoryResponse],
 )
 async def get_messages(
     conversation_id: UUID,
     service: ConversationServiceDep,
     current_user: CurrentUserDep,
-) -> list[MessageResponse]:
+) -> list[MessageHistoryResponse]:
     """校验会话所有权后按时间顺序返回完整消息列表。"""
     return await service.get_messages(
         user_id=current_user.id,

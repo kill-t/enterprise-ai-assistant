@@ -2,7 +2,7 @@
 
 from uuid import UUID
 
-from sqlalchemy import delete
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.modules.conversation.entity.message_citation import MessageCitationEntity
@@ -17,6 +17,24 @@ class MessageCitationRepository:
     def __init__(self, db: AsyncSession) -> None:
         """保存当前业务操作共用的异步数据库 Session。"""
         self.db = db
+
+    async def list_by_message_ids(
+        self,
+        message_ids: tuple[UUID, ...],
+    ) -> list[MessageCitationEntity]:
+        """一次读取多条消息的引用，避免历史列表出现 N+1 查询。"""
+        if not message_ids:
+            return []
+
+        statement = (
+            select(MessageCitationEntity)
+            .where(MessageCitationEntity.message_id.in_(message_ids))
+            .order_by(
+                MessageCitationEntity.message_id,
+                MessageCitationEntity.source_order,
+            )
+        )
+        return list((await self.db.scalars(statement)).all())
 
     async def replace_for_message(
         self,
