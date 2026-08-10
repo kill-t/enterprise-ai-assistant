@@ -61,9 +61,26 @@ from app.modules.conversation.schema.message_schema import (
     MessageStreamEvent,
     MessageStreamStartedEvent,
 )
+from app.modules.conversation.service.conversation_knowledge_search_service import (
+    ConversationKnowledgeSearchService,
+)
 from app.modules.conversation.service.conversation_summary_job_service import (
     ConversationSummaryJobService,
 )
+from app.modules.conversation.service.grounded_prompt_builder import (
+    GroundedPromptBuilder,
+)
+from app.modules.knowledge.schema.knowledge_search_schema import (
+    KnowledgeSearchRequest,
+)
+
+
+@dataclass(frozen=True)
+class _AssistantResponsePlan:
+    """表示本轮应调用模型，还是直接完成一条系统生成的可靠拒答。"""
+
+    request: ChatRequest | None
+    direct_response: ChatResponse | None
 
 
 @dataclass(frozen=True)
@@ -71,7 +88,8 @@ class _MessageGenerationContext:
     """保存一次消息生成在准备阶段确定的会话、请求和两条消息。"""
 
     conversation: ConversationEntity
-    request: ChatRequest
+    request: ChatRequest | None
+    direct_response: ChatResponse | None
     user_message: MessageEntity
     assistant_message: MessageEntity
 
@@ -83,6 +101,7 @@ class ConversationService:
         self,
         db: AsyncSession,
         memory_manager: MemoryManager,
+        knowledge_search_service: ConversationKnowledgeSearchService | None = None,
     ):
         """组装当前请求使用的仓储、Provider 和上下文组件。"""
         self.db = db
@@ -93,6 +112,10 @@ class ConversationService:
         self.memory_manager = memory_manager
         self.provider = ProviderFactory.create()
         self.prompt_builder = PromptBuilder()
+        self.grounded_prompt_builder = GroundedPromptBuilder()
+        self.knowledge_search_service = (
+            knowledge_search_service or ConversationKnowledgeSearchService(db)
+        )
         context_settings = ProviderFactory.get_context_settings()
         self.context_manager = ContextManager(
             context_window_tokens=context_settings.context_window_tokens,
@@ -196,7 +219,17 @@ class ConversationService:
             user_id=user_id,
             conversation_id=conversation_id,
             content=content,
+            enable_grounding=True,
         )
+        if context.direct_response is not None:
+            return await self._complete_assistant_response(
+                conversation=context.conversation,
+                conversation_id=conversation_id,
+                assistant_message=context.assistant_message,
+                assistant_response=context.direct_response,
+            )
+        if context.request is None:
+            raise RuntimeError("非流式消息缺少模型请求和直接响应")
         return await self._generate_assistant_response(
             conversation=context.conversation,
             conversation_id=conversation_id,
@@ -216,6 +249,8 @@ class ConversationService:
             conversation_id=conversation_id,
             content=content,
         )
+        if context.request is None:
+            raise RuntimeError("流式消息缺少模型请求")
         assistant_message = context.assistant_message
         content_parts: list[str] = []
         try:
@@ -319,18 +354,33 @@ class ConversationService:
         user_id: UUID,
         conversation_id: UUID,
         content: str,
+        enable_grounding: bool = False,
     ) -> _MessageGenerationContext:
         """构建模型请求，并在同一事务中创建用户消息和助手占位。"""
         app_logger.info("收到用户消息 conversation_id=%s", conversation_id)
         conversation = await self._get_owned_conversation(user_id, conversation_id)
         summary = await self.summary_repository.get_by_conversation_id(conversation_id)
         history_messages = await self._get_history(conversation_id, summary=summary)
-        request = self._build_chat_request(
-            conversation=conversation,
-            history=history_messages,
-            user_message=content,
-            summary_content=summary.content if summary is not None else None,
-        )
+        summary_content = summary.content if summary is not None else None
+        if enable_grounding:
+            response_plan = await self._build_grounded_response_plan(
+                user_id=user_id,
+                conversation=conversation,
+                conversation_id=conversation_id,
+                history=history_messages,
+                user_message=content,
+                summary_content=summary_content,
+            )
+        else:
+            response_plan = _AssistantResponsePlan(
+                request=self._build_chat_request(
+                    conversation=conversation,
+                    history=history_messages,
+                    user_message=content,
+                    summary_content=summary_content,
+                ),
+                direct_response=None,
+            )
 
         user_message = MessageEntity(
             conversation_id=conversation_id,
@@ -358,7 +408,8 @@ class ConversationService:
         await self._save_to_memory(conversation_id, user_message)
         return _MessageGenerationContext(
             conversation=conversation,
-            request=request,
+            request=response_plan.request,
+            direct_response=response_plan.direct_response,
             user_message=user_message,
             assistant_message=assistant_message,
         )
@@ -406,8 +457,10 @@ class ConversationService:
             exclude_message_id=original_user_message.id,
             summary=summary,
         )
-        request = self._build_chat_request(
+        response_plan = await self._build_grounded_response_plan(
+            user_id=user_id,
             conversation=conversation,
+            conversation_id=conversation_id,
             history=history_messages,
             user_message=original_user_message.content,
             summary_content=summary.content if summary is not None else None,
@@ -430,12 +483,93 @@ class ConversationService:
             conversation_id,
             message_id,
         )
+        if response_plan.direct_response is not None:
+            return await self._complete_assistant_response(
+                conversation=conversation,
+                conversation_id=conversation_id,
+                assistant_message=assistant_message,
+                assistant_response=response_plan.direct_response,
+            )
+        if response_plan.request is None:
+            raise RuntimeError("重试消息缺少模型请求和直接响应")
         return await self._generate_assistant_response(
             conversation=conversation,
             conversation_id=conversation_id,
-            request=request,
+            request=response_plan.request,
             assistant_message=assistant_message,
         )
+
+    async def _build_grounded_response_plan(
+        self,
+        user_id: UUID,
+        conversation: ConversationEntity,
+        conversation_id: UUID,
+        history: list[ChatMessage],
+        user_message: str,
+        summary_content: str | None,
+    ) -> _AssistantResponsePlan:
+        """根据活动知识库和可靠证据选择普通聊天、Grounded Chat 或直接拒答。"""
+        search_result = await self.knowledge_search_service.search(
+            user_id=user_id,
+            conversation_id=conversation_id,
+            request=KnowledgeSearchRequest(query=user_message),
+        )
+        if not search_result.searched_knowledge_base_ids:
+            return _AssistantResponsePlan(
+                request=self._build_chat_request(
+                    conversation=conversation,
+                    history=history,
+                    user_message=user_message,
+                    summary_content=summary_content,
+                ),
+                direct_response=None,
+            )
+
+        if not search_result.results:
+            app_logger.info(
+                "知识库无可靠证据，直接拒答 conversation_id=%s searched=%s",
+                conversation_id,
+                len(search_result.searched_knowledge_base_ids),
+            )
+            return _AssistantResponsePlan(
+                request=None,
+                direct_response=ChatResponse(
+                    content=self.grounded_prompt_builder.NO_EVIDENCE_REFUSAL,
+                    model="grounded-refusal",
+                    prompt_tokens=0,
+                    completion_tokens=0,
+                    total_tokens=0,
+                ),
+            )
+
+        base_system_prompt = self.prompt_builder.resolve_system_prompt(
+            conversation.system_prompt
+        )
+        grounded_system_prompt = self.grounded_prompt_builder.build_system_prompt(
+            base_system_prompt
+        )
+        grounded_user_message = self.grounded_prompt_builder.build_user_message(
+            question=user_message,
+            sources=search_result.results,
+        )
+        request = self._build_chat_request(
+            conversation=conversation,
+            history=history,
+            user_message=grounded_user_message,
+            summary_content=summary_content,
+            system_prompt_override=grounded_system_prompt,
+        )
+        # 元数据只记录操作类型和数量，不保存用户问题或来源正文等敏感内容。
+        request.metadata.update(
+            {
+                "operation": "grounded_chat",
+                "source_count": str(len(search_result.results)),
+                "knowledge_base_count": str(
+                    len(search_result.searched_knowledge_base_ids)
+                ),
+            }
+        )
+        return _AssistantResponsePlan(request=request, direct_response=None)
 
     async def _generate_assistant_response(
         self,
@@ -505,10 +639,13 @@ class ConversationService:
         history: list[ChatMessage],
         user_message: str,
         summary_content: str | None = None,
+        system_prompt_override: str | None = None,
     ) -> ChatRequest:
         """按模型预算裁剪完整轮次，并构造 Provider 使用的统一请求。"""
-        system_prompt = self.prompt_builder.resolve_system_prompt(
-            conversation.system_prompt
+        system_prompt = (
+            system_prompt_override
+            if system_prompt_override is not None
+            else self.prompt_builder.resolve_system_prompt(conversation.system_prompt)
         )
         summary_message = (
             self.prompt_builder.build_summary_message(summary_content)

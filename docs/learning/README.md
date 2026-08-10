@@ -52,3 +52,4 @@
 46. [会话知识库绑定与消息引用快照](46-conversation-knowledge-bindings-and-citation-snapshots.md)
 47. [会话知识库绑定 API 与原子替换](47-conversation-knowledge-base-binding-api.md)
 48. [会话多知识库检索聚合](48-conversation-multi-knowledge-search.md)
+49. [Grounded Prompt 与无证据拒答](49-grounded-prompt-and-no-evidence-refusal.md)

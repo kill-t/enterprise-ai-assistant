@@ -16,6 +16,9 @@ from app.infrastructure.llm.schemas import ChatResponse
 from app.modules.conversation.entity.message import MessageEntity
 from app.modules.conversation.schema.message_schema import MessageResponse
 from app.modules.conversation.service.conversation_service import ConversationService
+from app.modules.conversation.service.grounded_prompt_builder import (
+    GroundedPromptBuilder,
+)
 
 
 class FailingProvider:
@@ -107,6 +110,8 @@ def build_retry_service(
     service.memory_manager = memory_manager
     service.provider = provider
     service.prompt_builder = PromptBuilder()
+    service.grounded_prompt_builder = GroundedPromptBuilder()
+    service.knowledge_search_service = build_unbound_knowledge_search_service()
     service.context_manager = ContextManager()
     service.history_mapper = HistoryMapper()
     return service, message_repository, memory_manager
@@ -141,6 +146,8 @@ def test_model_timeout_persists_failed_assistant_message() -> None:
     service.memory_manager = memory_manager
     service.provider = FailingProvider()
     service.prompt_builder = PromptBuilder()
+    service.grounded_prompt_builder = GroundedPromptBuilder()
+    service.knowledge_search_service = build_unbound_knowledge_search_service()
     service.context_manager = ContextManager()
     service.history_mapper = HistoryMapper()
 
@@ -171,6 +178,18 @@ def test_model_timeout_persists_failed_assistant_message() -> None:
     assert [message.role for message in memory_manager.saved_messages] == ["user"]
     # 用户消息和助手占位在同一事务创建，模型失败再提交一次 FAILED 终态。
     assert db.commit.await_count == 2
+
+
+def build_unbound_knowledge_search_service() -> SimpleNamespace:
+    """返回没有活动知识库的检索替身，使旧测试继续走普通聊天分支。"""
+    return SimpleNamespace(
+        search=AsyncMock(
+            return_value=SimpleNamespace(
+                searched_knowledge_base_ids=[],
+                results=[],
+            )
+        )
+    )
 
 
 def test_failed_message_response_exposes_safe_error_details() -> None:
