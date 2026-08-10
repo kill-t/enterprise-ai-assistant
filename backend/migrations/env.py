@@ -7,10 +7,7 @@ from app.core.config import settings
 from app.infrastructure.database.base import Base
 
 # 必须导入全部实体，Alembic 才能从 Base.metadata 发现表结构。
-from app.modules.conversation.entity.conversation import ConversationEntity  # noqa: F401, E402
-from app.modules.conversation.entity.conversation_summary import ConversationSummaryEntity  # noqa: F401, E402
-from app.modules.conversation.entity.conversation_summary_job import ConversationSummaryJobEntity  # noqa: F401, E402
-from app.modules.conversation.entity.message import MessageEntity  # noqa: F401, E402
+from app.modules.conversation import models as conversation_models  # noqa: F401, E402
 from app.modules.identity.entity.user import UserEntity  # noqa: F401, E402
 from app.modules.knowledge import models as knowledge_models  # noqa: F401, E402
 
