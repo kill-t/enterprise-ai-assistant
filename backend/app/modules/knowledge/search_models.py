@@ -18,3 +18,22 @@ class KnowledgeSearchCandidate:
     page_end: int | None
     token_count: int
     score: float
+
+
+@dataclass(frozen=True, slots=True)
+class MultiKnowledgeSearchCandidate:
+    """表示跨知识库召回的一条候选，并携带去重和来源所需的额外字段。"""
+
+    knowledge_base_id: UUID
+    knowledge_base_name: str
+    chunk_id: UUID
+    document_id: UUID
+    filename: str
+    chunk_index: int
+    content: str
+    content_hash: str
+    heading_path: str | None
+    page_start: int | None
+    page_end: int | None
+    token_count: int
+    score: float

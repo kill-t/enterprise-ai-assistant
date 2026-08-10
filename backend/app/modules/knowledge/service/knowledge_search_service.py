@@ -18,10 +18,13 @@ from app.modules.knowledge.repository.knowledge_base_repository import (
 from app.modules.knowledge.repository.knowledge_search_repository import (
     KnowledgeSearchRepository,
 )
+from app.modules.knowledge.search_models import MultiKnowledgeSearchCandidate
 from app.modules.knowledge.schema.knowledge_search_schema import (
     KnowledgeSearchHit,
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
+    MultiKnowledgeSearchHit,
+    MultiKnowledgeSearchResponse,
 )
 
 
@@ -110,6 +113,157 @@ class KnowledgeSearchService:
                 for candidate in reliable_candidates
             ],
         )
+
+    async def search_many(
+        self,
+        user_id: UUID,
+        knowledge_bases: list[KnowledgeBaseEntity],
+        request: KnowledgeSearchRequest,
+    ) -> MultiKnowledgeSearchResponse:
+        """使用一个可比较的查询向量检索多个同配置知识库。"""
+        unique_knowledge_bases = self._normalize_multi_search_bases(
+            user_id=user_id,
+            knowledge_bases=knowledge_bases,
+        )
+        if not unique_knowledge_bases:
+            return MultiKnowledgeSearchResponse(
+                query=request.query,
+                searched_knowledge_base_ids=[],
+                similarity_threshold=self.similarity_threshold,
+                results=[],
+            )
+
+        profile = self._get_shared_embedding_profile(unique_knowledge_bases)
+        knowledge_base_ids = [item.id for item in unique_knowledge_bases]
+        incompatible_ids = (
+            await self.search_repository.list_incompatible_ready_knowledge_base_ids(
+                user_id=user_id,
+                knowledge_base_ids=knowledge_base_ids,
+            )
+        )
+        if incompatible_ids:
+            app_logger.warning(
+                "会话知识库检索发现不兼容向量 user_id=%s knowledge_base_ids=%s",
+                user_id,
+                incompatible_ids,
+            )
+            raise self._configuration_mismatch_exception()
+
+        embedding_result = await self._embed_query(request.query, profile=profile)
+        self._ensure_query_vector_compatible(
+            result=embedding_result,
+            profile=profile,
+        )
+        candidates = (
+            await self.search_repository.search_candidates_across_knowledge_bases(
+                user_id=user_id,
+                knowledge_base_ids=knowledge_base_ids,
+                query_vector=embedding_result.vectors[0],
+                embedding_model=profile.model,
+                candidate_limit=request.top_k * self.candidate_multiplier,
+            )
+        )
+        reliable_candidates = self._rank_unique_candidates(
+            candidates=candidates,
+            top_k=request.top_k,
+        )
+
+        app_logger.info(
+            "多知识库向量检索完成 user_id=%s knowledge_base_count=%s candidates=%s reliable=%s top_k=%s",
+            user_id,
+            len(knowledge_base_ids),
+            len(candidates),
+            len(reliable_candidates),
+            request.top_k,
+        )
+        return MultiKnowledgeSearchResponse(
+            query=request.query,
+            searched_knowledge_base_ids=knowledge_base_ids,
+            similarity_threshold=self.similarity_threshold,
+            results=[
+                MultiKnowledgeSearchHit.model_validate(candidate)
+                for candidate in reliable_candidates
+            ],
+        )
+
+    @staticmethod
+    def _normalize_multi_search_bases(
+        user_id: UUID,
+        knowledge_bases: list[KnowledgeBaseEntity],
+    ) -> list[KnowledgeBaseEntity]:
+        """校验内部调用边界并按首次出现顺序去掉重复知识库实体。"""
+        if any(item.user_id != user_id for item in knowledge_bases):
+            raise BusinessException(
+                code=ErrorCode.KNOWLEDGE_BASE_NOT_FOUND,
+                message="知识库不存在",
+                status_code=404,
+            )
+        if any(item.is_archived for item in knowledge_bases):
+            raise BusinessException(
+                code=ErrorCode.KNOWLEDGE_BASE_ARCHIVED,
+                message="知识库已归档，不能执行检索",
+                status_code=409,
+            )
+
+        seen_ids: set[UUID] = set()
+        unique_items: list[KnowledgeBaseEntity] = []
+        for item in knowledge_bases:
+            if item.id not in seen_ids:
+                seen_ids.add(item.id)
+                unique_items.append(item)
+        return unique_items
+
+    @staticmethod
+    def _get_shared_embedding_profile(
+        knowledge_bases: list[KnowledgeBaseEntity],
+    ) -> EmbeddingProfile:
+        """要求全部知识库使用同一向量空间，确保跨库分数可以比较。"""
+        profiles = {
+            EmbeddingProfile(
+                provider=item.embedding_provider,
+                model=item.embedding_model,
+                dimension=item.embedding_dimension,
+            )
+            for item in knowledge_bases
+        }
+        if len(profiles) != 1:
+            raise BusinessException(
+                code=ErrorCode.KNOWLEDGE_SEARCH_CONFIG_MISMATCH,
+                message="所选知识库使用了不同的向量配置，请只选择相同配置的知识库",
+                status_code=409,
+            )
+        return profiles.pop()
+
+    def _rank_unique_candidates(
+        self,
+        candidates: list[MultiKnowledgeSearchCandidate],
+        top_k: int,
+    ) -> list[MultiKnowledgeSearchCandidate]:
+        """按相似度全局排序，以正文哈希去重并返回达到阈值的 Top-K。"""
+        ranked = sorted(
+            (
+                candidate
+                for candidate in candidates
+                if candidate.score >= self.similarity_threshold
+            ),
+            key=lambda candidate: (
+                -candidate.score,
+                str(candidate.knowledge_base_id),
+                str(candidate.document_id),
+                candidate.chunk_index,
+                str(candidate.chunk_id),
+            ),
+        )
+        unique_candidates: list[MultiKnowledgeSearchCandidate] = []
+        seen_content_hashes: set[str] = set()
+        for candidate in ranked:
+            if candidate.content_hash in seen_content_hashes:
+                continue
+            seen_content_hashes.add(candidate.content_hash)
+            unique_candidates.append(candidate)
+            if len(unique_candidates) == top_k:
+                break
+        return unique_candidates
 
     async def _get_searchable_knowledge_base(
         self,

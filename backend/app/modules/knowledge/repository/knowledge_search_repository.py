@@ -10,7 +10,10 @@ from app.common.enums import DocumentStatus
 from app.modules.knowledge.entity.document import DocumentEntity
 from app.modules.knowledge.entity.document_chunk import DocumentChunkEntity
 from app.modules.knowledge.entity.knowledge_base import KnowledgeBaseEntity
-from app.modules.knowledge.search_models import KnowledgeSearchCandidate
+from app.modules.knowledge.search_models import (
+    KnowledgeSearchCandidate,
+    MultiKnowledgeSearchCandidate,
+)
 
 
 class KnowledgeSearchRepository:
@@ -106,6 +109,109 @@ class KnowledgeSearchRepository:
                 page_end=row.page_end,
                 token_count=row.token_count,
                 # 浮点计算可能产生极小越界，响应前收敛到余弦相似度合法区间。
+                score=max(-1.0, min(1.0, float(row.score))),
+            )
+            for row in rows
+        ]
+
+    async def list_incompatible_ready_knowledge_base_ids(
+        self,
+        user_id: UUID,
+        knowledge_base_ids: list[UUID],
+    ) -> list[UUID]:
+        """一次找出选中知识库内与各自配置快照不一致的 READY Chunk。"""
+        if not knowledge_base_ids:
+            return []
+        statement = (
+            select(KnowledgeBaseEntity.id)
+            .join(
+                DocumentEntity,
+                DocumentEntity.knowledge_base_id == KnowledgeBaseEntity.id,
+            )
+            .join(
+                DocumentChunkEntity,
+                DocumentChunkEntity.document_id == DocumentEntity.id,
+            )
+            .where(
+                KnowledgeBaseEntity.id.in_(knowledge_base_ids),
+                KnowledgeBaseEntity.user_id == user_id,
+                KnowledgeBaseEntity.is_archived.is_(False),
+                DocumentEntity.status == DocumentStatus.READY,
+                DocumentChunkEntity.embedding_model
+                != KnowledgeBaseEntity.embedding_model,
+            )
+            .distinct()
+            .order_by(KnowledgeBaseEntity.id.asc())
+        )
+        return list((await self.db.scalars(statement)).all())
+
+    async def search_candidates_across_knowledge_bases(
+        self,
+        user_id: UUID,
+        knowledge_base_ids: list[UUID],
+        query_vector: Sequence[float],
+        embedding_model: str,
+        candidate_limit: int,
+    ) -> list[MultiKnowledgeSearchCandidate]:
+        """对一组同模型知识库执行一次向量查询，并返回全局候选。"""
+        if not knowledge_base_ids:
+            return []
+        cosine_distance = DocumentChunkEntity.embedding.cosine_distance(
+            list(query_vector)
+        )
+        similarity = (1.0 - cosine_distance).label("score")
+        statement = (
+            select(
+                KnowledgeBaseEntity.id.label("knowledge_base_id"),
+                KnowledgeBaseEntity.name.label("knowledge_base_name"),
+                DocumentChunkEntity.id.label("chunk_id"),
+                DocumentChunkEntity.document_id,
+                DocumentEntity.filename,
+                DocumentChunkEntity.chunk_index,
+                DocumentChunkEntity.content,
+                DocumentChunkEntity.content_hash,
+                DocumentChunkEntity.heading_path,
+                DocumentChunkEntity.page_start,
+                DocumentChunkEntity.page_end,
+                DocumentChunkEntity.token_count,
+                similarity,
+            )
+            .join(
+                DocumentEntity,
+                DocumentEntity.id == DocumentChunkEntity.document_id,
+            )
+            .join(
+                KnowledgeBaseEntity,
+                KnowledgeBaseEntity.id == DocumentEntity.knowledge_base_id,
+            )
+            .where(
+                KnowledgeBaseEntity.id.in_(knowledge_base_ids),
+                KnowledgeBaseEntity.user_id == user_id,
+                KnowledgeBaseEntity.is_archived.is_(False),
+                KnowledgeBaseEntity.embedding_model == embedding_model,
+                DocumentEntity.status == DocumentStatus.READY,
+                DocumentChunkEntity.embedding_model == embedding_model,
+            )
+            # 一个距离排序和 LIMIT 作用于全部选中知识库，得到真正的全局候选集合。
+            .order_by(cosine_distance.asc())
+            .limit(candidate_limit)
+        )
+        rows = (await self.db.execute(statement)).all()
+        return [
+            MultiKnowledgeSearchCandidate(
+                knowledge_base_id=row.knowledge_base_id,
+                knowledge_base_name=row.knowledge_base_name,
+                chunk_id=row.chunk_id,
+                document_id=row.document_id,
+                filename=row.filename,
+                chunk_index=row.chunk_index,
+                content=row.content,
+                content_hash=row.content_hash,
+                heading_path=row.heading_path,
+                page_start=row.page_start,
+                page_end=row.page_end,
+                token_count=row.token_count,
+                # PostgreSQL 浮点误差可能产生极小越界，进入响应前收敛到合法范围。
                 score=max(-1.0, min(1.0, float(row.score))),
             )
             for row in rows

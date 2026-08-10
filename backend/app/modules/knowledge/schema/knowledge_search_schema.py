@@ -45,3 +45,19 @@ class KnowledgeSearchResponse(BaseModel):
     embedding_model: str
     similarity_threshold: float
     results: list[KnowledgeSearchHit]
+
+
+class MultiKnowledgeSearchHit(KnowledgeSearchHit):
+    """在普通 Chunk 来源上补充所属知识库，供聊天引用和审计使用。"""
+
+    knowledge_base_id: UUID
+    knowledge_base_name: str
+
+
+class MultiKnowledgeSearchResponse(BaseModel):
+    """返回多个同配置知识库经过全局排序后的统一证据列表。"""
+
+    query: str
+    searched_knowledge_base_ids: list[UUID]
+    similarity_threshold: float
+    results: list[MultiKnowledgeSearchHit]
