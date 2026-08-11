@@ -161,6 +161,55 @@ export interface KnowledgeBaseUpdateInput {
   is_archived?: boolean;
 }
 
+/** 文档从等待后台入库到可检索、失败或被删除的业务状态。 */
+export type DocumentStatus =
+  | "pending"
+  | "processing"
+  | "ready"
+  | "failed"
+  | "deleted";
+
+/** 一次持久化入库任务的执行状态；重试会创建新的任务，而不是覆盖旧任务。 */
+export type DocumentIngestionJobStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed";
+
+/** 对应 FastAPI DocumentResponse，包含页面展示和故障定位需要的处理统计。 */
+export interface DocumentResponse {
+  id: string;
+  knowledge_base_id: string;
+  filename: string;
+  mime_type: string;
+  size_bytes: number;
+  sha256: string;
+  status: DocumentStatus;
+  parser_version: string | null;
+  chunker_version: string | null;
+  page_count: number;
+  chunk_count: number;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+  finished_at: string | null;
+}
+
+/** 上传接口只确认文件已接收并创建任务，不代表文档已经可以检索。 */
+export interface DocumentUploadResponse {
+  document: DocumentResponse;
+  job_id: string;
+  job_status: DocumentIngestionJobStatus;
+}
+
+/** 失败重试会返回恢复为 pending 的文档，以及本次新任务的身份。 */
+export interface DocumentRetryResponse {
+  document: DocumentResponse;
+  job_id: string;
+  job_status: DocumentIngestionJobStatus;
+}
+
 /** FastAPI 业务异常处理器返回的统一错误结构。 */
 export interface ApiErrorPayload {
   code?: string;

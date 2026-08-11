@@ -6,6 +6,7 @@ import * as authApi from "@/api/auth";
 import { ApiError } from "@/api/client";
 import { createAppRouter } from "@/router";
 import { useAuthStore } from "@/stores/auth";
+import { useDocumentStore } from "@/stores/documents";
 import { useKnowledgeBaseStore } from "@/stores/knowledge-bases";
 
 vi.mock("@/api/auth", () => ({
@@ -35,6 +36,7 @@ describe("认证路由守卫", () => {
     const pinia = createPinia();
     setActivePinia(pinia);
     const knowledgeBaseStore = useKnowledgeBaseStore();
+    const documentStore = useDocumentStore();
     knowledgeBaseStore.knowledgeBases = [
       {
         id: "old-knowledge-base",
@@ -48,6 +50,28 @@ describe("认证路由守卫", () => {
         updated_at: "2026-08-11T00:00:00Z",
       },
     ];
+    documentStore.documentsByKnowledgeBase = {
+      "old-knowledge-base": [
+        {
+          id: "old-document",
+          knowledge_base_id: "old-knowledge-base",
+          filename: "上一位用户的资料.md",
+          mime_type: "text/markdown",
+          size_bytes: 100,
+          sha256: "a".repeat(64),
+          status: "ready",
+          parser_version: "markdown-v1",
+          chunker_version: "token-v1",
+          page_count: 1,
+          chunk_count: 1,
+          error_code: null,
+          error_message: null,
+          created_at: "2026-08-11T00:00:00Z",
+          updated_at: "2026-08-11T00:00:00Z",
+          finished_at: "2026-08-11T00:00:10Z",
+        },
+      ],
+    };
     const router = createAppRouter(pinia, createMemoryHistory());
 
     await router.push("/");
@@ -57,6 +81,7 @@ describe("认证路由守卫", () => {
     expect(router.currentRoute.value.query.redirect).toBe("/");
     expect(authApi.getCurrentUser).not.toHaveBeenCalled();
     expect(knowledgeBaseStore.knowledgeBases).toEqual([]);
+    expect(documentStore.documentsByKnowledgeBase).toEqual({});
   });
 
   it("未登录用户可以访问注册页", async () => {
