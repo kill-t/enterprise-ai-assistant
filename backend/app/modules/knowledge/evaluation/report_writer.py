@@ -63,6 +63,9 @@ class RagEvaluationReportWriter:
             "",
             "| 指标 | 结果 |",
             "| --- | ---: |",
+            f"| Embedding 模型 | {report.embedding_model or '不适用'} |",
+            "| 相似度阈值 | "
+            f"{self._format_number(report.similarity_threshold)} |",
             f"| 样例总数 | {report.total_cases} |",
             f"| 可回答样例 | {report.answer_cases} |",
             f"| 拒答样例 | {report.refusal_cases} |",
@@ -106,3 +109,8 @@ class RagEvaluationReportWriter:
         if value is None:
             return "不适用"
         return "是" if value else "否"
+
+    @staticmethod
+    def _format_number(value: float | None) -> str:
+        """展示普通配置数值，避免把相似度阈值误格式化为百分比指标。"""
+        return "不适用" if value is None else f"{value:g}"

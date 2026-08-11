@@ -195,6 +195,42 @@ def test_metrics_reject_missing_or_unexpected_observation() -> None:
         RagMetricsEvaluator(top_k=5).evaluate((case,), (unexpected,))
 
 
+@pytest.mark.parametrize(
+    ("models", "thresholds", "expected_message"),
+    [
+        (("model-a", "model-b"), (0.2, 0.2), "多个 Embedding 模型"),
+        (("model-a", "model-a"), (0.2, 0.3), "多个相似度阈值"),
+    ],
+)
+def test_metrics_reject_mixed_search_configuration(
+    models: tuple[str, str],
+    thresholds: tuple[float, float],
+    expected_message: str,
+) -> None:
+    """同一基线不能混合模型或阈值，否则整体指标无法解释和复现。"""
+    cases = tuple(
+        RagEvaluationCase(
+            case_id=f"case-{index}",
+            question=f"未知问题 {index}",
+            expected_behavior=RagExpectedBehavior.REFUSE,
+        )
+        for index in range(2)
+    )
+    observations = tuple(
+        RagEvaluationObservation(
+            case_id=case.case_id,
+            retrieved_sources=(),
+            refused=True,
+            embedding_model=models[index],
+            similarity_threshold=thresholds[index],
+        )
+        for index, case in enumerate(cases)
+    )
+
+    with pytest.raises(RagEvaluationError, match=expected_message):
+        RagMetricsEvaluator(top_k=3).evaluate(cases, observations)
+
+
 def build_answer_case(
     *,
     case_id: str,

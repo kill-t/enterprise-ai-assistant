@@ -98,6 +98,8 @@ def test_retrieval_runner_calls_search_service_and_builds_metrics() -> None:
     assert report.recall_at_k == 1.0
     assert report.mean_reciprocal_rank == 1.0
     assert report.refusal_accuracy == 1.0
+    assert report.embedding_model == "mock-hash-1024"
+    assert report.similarity_threshold == 0.2
     # 只执行检索，没有运行回答和引用生成，因此引用指标必须明确为不适用。
     assert report.citation_validity_rate is None
     assert report.average_latency_ms == pytest.approx(8.0)

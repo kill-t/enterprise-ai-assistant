@@ -1,0 +1,14 @@
+{"case_id":"project-identity-owner","question":"企业 AI 助手项目的内部代号和负责人分别是什么？","expected_behavior":"answer","expected_evidence":[{"filename":"enterprise-ai-rag-demo.md","content_contains":"内部项目代号是“蓝鲸”"},{"filename":"enterprise-ai-rag-demo.md","content_contains":"项目负责人是林晓"}],"tags":["多证据","项目背景"]}
+{"case_id":"project-first-scope","question":"蓝鲸项目第一版面向哪些工作场景？","expected_behavior":"answer","expected_evidence":[{"filename":"enterprise-ai-rag-demo.md","content_contains":"第一版面向企业办公知识问答与会议准备"}],"tags":["单事实","项目背景"]}
+{"case_id":"meeting-schedule","question":"蓝鲸项目验收会议在什么日期和时间举行？","expected_behavior":"answer","expected_evidence":[{"filename":"enterprise-ai-rag-demo.md","content_contains":"2026 年 8 月 15 日 14:00"}],"tags":["单事实","会议"]}
+{"case_id":"meeting-goal","question":"蓝鲸项目验收会议要确认哪些要求？","expected_behavior":"answer","expected_evidence":[{"filename":"enterprise-ai-rag-demo.md","content_contains":"可追溯回答、权限隔离和失败恢复要求"}],"tags":["单事实","会议"]}
+{"case_id":"raw-file-storage","question":"RAG 的原始文件保存在哪里？","expected_behavior":"answer","expected_evidence":[{"filename":"enterprise-ai-rag-demo.md","content_contains":"原始文件保存在 MinIO"}],"tags":["单事实","系统边界","存储"]}
+{"case_id":"vector-metadata-storage","question":"文档元数据、入库任务、文本切块和向量保存在哪里？","expected_behavior":"answer","expected_evidence":[{"filename":"enterprise-ai-rag-demo.md","content_contains":"文档元数据、入库任务、文本切块和向量保存在 PostgreSQL 与 pgvector"}],"tags":["单事实","系统边界","存储"]}
+{"case_id":"redis-responsibility","question":"Redis 在 RAG 系统中负责什么，是否保存事实数据？","expected_behavior":"answer","expected_evidence":[{"filename":"enterprise-ai-rag-demo.md","content_contains":"Redis 只负责缓存和 Celery 任务协调，不保存 RAG 的事实数据"}],"tags":["多证据","系统边界","Redis"]}
+{"case_id":"supported-formats-ocr","question":"第一版支持哪些文档格式，是否支持扫描件 OCR？","expected_behavior":"answer","expected_evidence":[{"filename":"enterprise-ai-rag-demo.md","content_contains":"第一版只支持 PDF、TXT 和 Markdown，不支持扫描件 OCR"}],"tags":["多证据","系统边界","文档处理"]}
+{"case_id":"no-evidence-policy","question":"知识库没有可靠证据时系统应该怎么处理？","expected_behavior":"answer","expected_evidence":[{"filename":"enterprise-ai-rag-demo.md","content_contains":"系统必须明确拒答，不能依靠模型常识猜测"}],"tags":["单事实","系统边界","拒答策略"]}
+{"case_id":"redis-failure-recovery","question":"Redis 暂时不可用时，入库任务状态和恢复流程会怎样？","expected_behavior":"answer","expected_evidence":[{"filename":"enterprise-ai-rag-demo.md","content_contains":"PostgreSQL 中的持久化任务状态不会丢失"},{"filename":"enterprise-ai-rag-demo.md","content_contains":"恢复扫描器会在 Redis 恢复后重新投递"}],"tags":["多证据","系统边界","失败恢复"]}
+{"case_id":"unknown-bronze-casting","question":"古代青铜器失蜡法铸造的炉温标准是多少？","expected_behavior":"refuse","tags":["拒答","青铜铸造"]}
+{"case_id":"unknown-octopus-neurons","question":"深海巨型章鱼拥有多少个神经元？","expected_behavior":"refuse","tags":["拒答","海洋生物"]}
+{"case_id":"unknown-rainforest-rainfall","question":"亚马逊雨林西部每年的平均降雨量是多少？","expected_behavior":"refuse","tags":["拒答","气候地理"]}
+{"case_id":"unknown-orbital-fuel","question":"ZXQ-917 轨道飞行器的氦三燃料配额是多少？","expected_behavior":"refuse","tags":["拒答","虚构航天"]}

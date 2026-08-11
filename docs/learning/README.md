@@ -67,3 +67,4 @@
 61. [Vue 会话知识库选择与原子绑定](61-vue-conversation-knowledge-base-binding.md)
 62. [RAG 评测契约、数据集加载与离线指标](62-rag-evaluation-contract-and-metrics.md)
 63. [RAG 检索评测 Runner、延迟与双格式报告](63-rag-retrieval-evaluation-runner.md)
+64. [RAG 受控语料、种子数据集与 Mock 基线](64-rag-seed-dataset-and-mock-baseline.md)

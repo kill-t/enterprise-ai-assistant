@@ -115,6 +115,8 @@ class RagEvaluationObservation(BaseModel):
     # None 表示本次只执行了检索，没有运行回答层；空元组表示回答层明确没有产生引用。
     cited_source_ids: tuple[str, ...] | None = None
     latency_ms: float | None = Field(default=None, ge=0.0)
+    embedding_model: str | None = Field(default=None, min_length=1, max_length=255)
+    similarity_threshold: float | None = Field(default=None, ge=-1.0, le=1.0)
 
     @field_validator("case_id", mode="before")
     @classmethod
@@ -163,6 +165,8 @@ class RagCaseEvaluationResult(BaseModel):
 class RagEvaluationReport(BaseModel):
     """汇总整批评测的核心指标与逐题明细。"""
 
+    embedding_model: str | None = None
+    similarity_threshold: float | None = Field(default=None, ge=-1.0, le=1.0)
     top_k: int = Field(ge=1, le=20)
     total_cases: int = Field(gt=0)
     answer_cases: int = Field(ge=0)

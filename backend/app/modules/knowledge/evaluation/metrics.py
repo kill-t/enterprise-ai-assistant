@@ -67,8 +67,13 @@ class RagMetricsEvaluator:
             for result in results
             if result.latency_ms is not None
         )
+        embedding_model, similarity_threshold = self._resolve_search_metadata(
+            observations
+        )
 
         return RagEvaluationReport(
+            embedding_model=embedding_model,
+            similarity_threshold=similarity_threshold,
             top_k=self.top_k,
             total_cases=len(cases),
             answer_cases=answer_cases,
@@ -92,6 +97,35 @@ class RagMetricsEvaluator:
             average_latency_ms=fmean(latencies) if latencies else None,
             p95_latency_ms=self._nearest_rank_percentile(latencies, 0.95),
             results=results,
+        )
+
+    @staticmethod
+    def _resolve_search_metadata(
+        observations: tuple[RagEvaluationObservation, ...],
+    ) -> tuple[str | None, float | None]:
+        """要求整批观测使用同一模型和阈值，避免把不同配置混成一个基线。"""
+        models = [observation.embedding_model for observation in observations]
+        thresholds = [
+            observation.similarity_threshold for observation in observations
+        ]
+        if any(value is None for value in models) != all(
+            value is None for value in models
+        ):
+            raise RagEvaluationError("RAG 评测观测的 Embedding 模型元数据不完整")
+        if any(value is None for value in thresholds) != all(
+            value is None for value in thresholds
+        ):
+            raise RagEvaluationError("RAG 评测观测的相似度阈值元数据不完整")
+
+        known_models = {value for value in models if value is not None}
+        known_thresholds = {value for value in thresholds if value is not None}
+        if len(known_models) > 1:
+            raise RagEvaluationError("同一份 RAG 报告不能混用多个 Embedding 模型")
+        if len(known_thresholds) > 1:
+            raise RagEvaluationError("同一份 RAG 报告不能混用多个相似度阈值")
+        return (
+            next(iter(known_models), None),
+            next(iter(known_thresholds), None),
         )
 
     def _evaluate_case(

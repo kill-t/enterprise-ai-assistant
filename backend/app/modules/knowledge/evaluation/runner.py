@@ -126,4 +126,6 @@ class RagRetrievalEvaluationRunner:
             # 检索 Runner 没有运行回答模型，必须保留 None 表示引用指标未评测。
             cited_source_ids=None,
             latency_ms=latency_ms,
+            embedding_model=response.embedding_model,
+            similarity_threshold=response.similarity_threshold,
         )
