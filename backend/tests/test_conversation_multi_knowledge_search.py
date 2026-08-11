@@ -9,13 +9,16 @@ from app.common.enums import DocumentStatus
 from app.common.exception.business_exception import BusinessException
 from app.common.exception.error_code import ErrorCode
 from app.infrastructure.embedding.schemas import EmbeddingProfile, EmbeddingResult
-from app.modules.conversation.entity.conversation import ConversationEntity
+from app.modules.conversation.models import ConversationEntity
 from app.modules.conversation.service.conversation_knowledge_search_service import (
     ConversationKnowledgeSearchService,
 )
 from app.modules.knowledge.entity.knowledge_base import KnowledgeBaseEntity
 from app.modules.knowledge.repository.knowledge_search_repository import (
     KnowledgeSearchRepository,
+)
+from app.modules.knowledge.retrieval.evidence_selection import (
+    ThresholdEvidenceSelector,
 )
 from app.modules.knowledge.schema.knowledge_search_schema import (
     KnowledgeSearchRequest,
@@ -383,6 +386,7 @@ def build_core_search_service(
     embedding_factory,
     similarity_threshold: float = 0.2,
     candidate_multiplier: int = 4,
+    evidence_selector=None,
 ) -> KnowledgeSearchService:
     """构造不连接真实基础设施的核心跨库检索 Service。"""
     service = object.__new__(KnowledgeSearchService)
@@ -390,6 +394,7 @@ def build_core_search_service(
     service.embedding_factory = embedding_factory
     service.similarity_threshold = similarity_threshold
     service.candidate_multiplier = candidate_multiplier
+    service.evidence_selector = evidence_selector or ThresholdEvidenceSelector()
     return service
 
 

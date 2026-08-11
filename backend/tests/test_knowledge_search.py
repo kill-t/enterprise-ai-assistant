@@ -20,6 +20,12 @@ from app.modules.knowledge.entity.knowledge_base import KnowledgeBaseEntity
 from app.modules.knowledge.repository.knowledge_search_repository import (
     KnowledgeSearchRepository,
 )
+from app.modules.knowledge.retrieval.evidence_selection import (
+    ThresholdEvidenceSelector,
+)
+from app.modules.knowledge.retrieval.mock_evidence_selector import (
+    MockEvidenceSelector,
+)
 from app.modules.knowledge.schema.knowledge_search_schema import (
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
@@ -187,6 +193,115 @@ def test_service_uses_provider_specific_threshold_without_explicit_override() ->
     assert [result.score for result in response.results] == [0.46]
 
 
+def test_service_delegates_reranking_and_rejection_to_evidence_selector() -> None:
+    """Service 必须采用第二阶段的最终顺序，也必须尊重其证据不足决定。"""
+    user_id = uuid4()
+    knowledge_base = build_knowledge_base(user_id=user_id)
+    first = build_candidate(score=0.91, chunk_index=0)
+    second = build_candidate(score=0.72, chunk_index=1)
+    embedding_service = SimpleNamespace(
+        embed_texts=AsyncMock(
+            return_value=EmbeddingResult(
+                vectors=((1.0, 0.0),),
+                model=knowledge_base.embedding_model,
+                dimension=knowledge_base.embedding_dimension,
+            )
+        )
+    )
+    repository = SimpleNamespace(
+        has_incompatible_ready_chunks=AsyncMock(return_value=False),
+        search_candidates=AsyncMock(return_value=[first, second]),
+    )
+    selector = MockEvidenceSelector(
+        selected_chunk_ids=(second.chunk_id, first.chunk_id)
+    )
+    service = build_service(
+        knowledge_base=knowledge_base,
+        search_repository=repository,
+        embedding_factory=SimpleNamespace(
+            create_service=Mock(return_value=embedding_service)
+        ),
+        evidence_selector=selector,
+        similarity_threshold=0.5,
+    )
+
+    reranked = asyncio.run(
+        service.search(
+            user_id=user_id,
+            knowledge_base_id=knowledge_base.id,
+            request=KnowledgeSearchRequest(query="哪个片段能够回答？", top_k=2),
+        )
+    )
+
+    assert [item.chunk_id for item in reranked.results] == [
+        second.chunk_id,
+        first.chunk_id,
+    ]
+    assert selector.requests[0].candidates == (first, second)
+    assert selector.requests[0].similarity_threshold == 0.5
+
+    rejecting_service = build_service(
+        knowledge_base=knowledge_base,
+        search_repository=repository,
+        embedding_factory=SimpleNamespace(
+            create_service=Mock(return_value=embedding_service)
+        ),
+        evidence_selector=MockEvidenceSelector(force_reject=True),
+        similarity_threshold=0.5,
+    )
+    rejected = asyncio.run(
+        rejecting_service.search(
+            user_id=user_id,
+            knowledge_base_id=knowledge_base.id,
+            request=KnowledgeSearchRequest(query="哪个片段能够回答？", top_k=2),
+        )
+    )
+
+    assert rejected.results == []
+
+
+def test_service_maps_evidence_selector_failure_to_safe_503() -> None:
+    """第二阶段故障不能伪装为正常拒答，也不能泄露内部异常正文。"""
+    user_id = uuid4()
+    knowledge_base = build_knowledge_base(user_id=user_id)
+    embedding_service = SimpleNamespace(
+        embed_texts=AsyncMock(
+            return_value=EmbeddingResult(
+                vectors=((1.0, 0.0),),
+                model=knowledge_base.embedding_model,
+                dimension=knowledge_base.embedding_dimension,
+            )
+        )
+    )
+    service = build_service(
+        knowledge_base=knowledge_base,
+        search_repository=SimpleNamespace(
+            has_incompatible_ready_chunks=AsyncMock(return_value=False),
+            search_candidates=AsyncMock(
+                return_value=[build_candidate(score=0.9, chunk_index=0)]
+            ),
+        ),
+        embedding_factory=SimpleNamespace(
+            create_service=Mock(return_value=embedding_service)
+        ),
+        evidence_selector=MockEvidenceSelector(
+            failure_message="包含内部重排序服务地址"
+        ),
+    )
+
+    error = run_business_error(
+        service.search(
+            user_id=user_id,
+            knowledge_base_id=knowledge_base.id,
+            request=KnowledgeSearchRequest(query="项目会议"),
+        )
+    )
+
+    assert error.code == ErrorCode.KNOWLEDGE_SEARCH_SELECTOR_UNAVAILABLE
+    assert error.status_code == 503
+    assert "内部重排序服务地址" not in error.message
+
+
 def test_service_hides_missing_or_cross_user_knowledge_base() -> None:
     """知识库不存在或属于其他用户时必须统一返回 404，且不能调用向量模型。"""
     embedding_factory = SimpleNamespace(create_service=Mock())
@@ -351,6 +466,7 @@ def build_service(
     embedding_factory=None,
     similarity_threshold: float | None = 0.2,
     candidate_multiplier: int = 4,
+    evidence_selector=None,
 ) -> KnowledgeSearchService:
     """构造不连接真实基础设施的检索 Service。"""
     service = object.__new__(KnowledgeSearchService)
@@ -366,6 +482,7 @@ def build_service(
     )
     service.similarity_threshold = similarity_threshold
     service.candidate_multiplier = candidate_multiplier
+    service.evidence_selector = evidence_selector or ThresholdEvidenceSelector()
     return service
 
 

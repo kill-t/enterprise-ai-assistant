@@ -70,3 +70,4 @@
 64. [RAG 受控语料、种子数据集与 Mock 基线](64-rag-seed-dataset-and-mock-baseline.md)
 65. [真实 Embedding 基线与 Provider 独立阈值校准](65-real-embedding-baseline-and-threshold-calibration.md)
 66. [RAG 困难评测集与指标诊断](66-rag-challenge-evaluation-and-diagnostics.md)
+67. [RAG 两阶段检索与 EvidenceSelector 契约](67-rag-two-stage-retrieval-contract.md)

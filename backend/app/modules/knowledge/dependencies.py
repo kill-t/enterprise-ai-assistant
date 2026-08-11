@@ -14,6 +14,9 @@ from app.infrastructure.task_queue.document_ingestion_dispatcher import (
 from app.modules.knowledge.repository.document_ingestion_job_repository import (
     DocumentIngestionJobRepository,
 )
+from app.modules.knowledge.retrieval.evidence_selection import (
+    ThresholdEvidenceSelector,
+)
 from app.modules.knowledge.service.document_ingestion_dispatch_service import (
     DocumentIngestionDispatchService,
 )
@@ -63,11 +66,12 @@ DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
 def get_knowledge_search_service(
     db: AsyncSession = Depends(get_db),
 ) -> KnowledgeSearchService:
-    """组装只读向量检索服务，默认按知识库快照创建 Embedding Provider。"""
+    """组装向量候选召回和当前无额度的阈值证据选择实现。"""
     return KnowledgeSearchService(
         db=db,
         embedding_factory=EmbeddingProviderFactory(),
         candidate_multiplier=settings.rag.search_candidate_multiplier,
+        evidence_selector=ThresholdEvidenceSelector(),
     )
 
 

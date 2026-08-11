@@ -1,5 +1,6 @@
-"""编排知识库所有权、查询向量生成与可靠性过滤。"""
+"""编排知识库所有权、查询向量生成、候选召回与第二阶段证据选择。"""
 
+from typing import TypeVar
 from uuid import UUID
 
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -18,7 +19,17 @@ from app.modules.knowledge.repository.knowledge_base_repository import (
 from app.modules.knowledge.repository.knowledge_search_repository import (
     KnowledgeSearchRepository,
 )
-from app.modules.knowledge.search_models import MultiKnowledgeSearchCandidate
+from app.modules.knowledge.retrieval.evidence_selection import (
+    BaseEvidenceSelector,
+    EvidenceSelectionError,
+    EvidenceSelectionRequest,
+    EvidenceSelectionResult,
+    ThresholdEvidenceSelector,
+)
+from app.modules.knowledge.search_models import (
+    KnowledgeSearchCandidate,
+    MultiKnowledgeSearchCandidate,
+)
 from app.modules.knowledge.schema.knowledge_search_schema import (
     KnowledgeSearchHit,
     KnowledgeSearchRequest,
@@ -28,8 +39,15 @@ from app.modules.knowledge.schema.knowledge_search_schema import (
 )
 
 
+SearchCandidateT = TypeVar(
+    "SearchCandidateT",
+    KnowledgeSearchCandidate,
+    MultiKnowledgeSearchCandidate,
+)
+
+
 class KnowledgeSearchService:
-    """把用户问题转换为安全、可追溯且达到阈值的 Chunk 结果。"""
+    """把用户问题转换为经过权限过滤和第二阶段判断的可追溯证据。"""
 
     def __init__(
         self,
@@ -37,8 +55,9 @@ class KnowledgeSearchService:
         embedding_factory: EmbeddingProviderFactory | None = None,
         similarity_threshold: float | None = None,
         candidate_multiplier: int | None = None,
+        evidence_selector: BaseEvidenceSelector | None = None,
     ) -> None:
-        """组装只读 Repository、Embedding 工厂和后端检索规则。"""
+        """组装候选召回、Embedding 和可替换的第二阶段证据选择。"""
         self.knowledge_base_repository = KnowledgeBaseRepository(db)
         self.search_repository = KnowledgeSearchRepository(db)
         self.embedding_factory = embedding_factory or EmbeddingProviderFactory()
@@ -49,6 +68,8 @@ class KnowledgeSearchService:
             if candidate_multiplier is None
             else candidate_multiplier
         )
+        # 第一版默认实现仅复现旧阈值行为，后续 Reranker 可通过同一接口替换。
+        self.evidence_selector = evidence_selector or ThresholdEvidenceSelector()
 
     async def search(
         self,
@@ -87,18 +108,21 @@ class KnowledgeSearchService:
             embedding_model=profile.model,
             candidate_limit=request.top_k * self.candidate_multiplier,
         )
-        reliable_candidates = [
-            candidate
-            for candidate in candidates
-            if candidate.score >= similarity_threshold
-        ][: request.top_k]
+        selection = await self._select_evidence(
+            query=request.query,
+            candidates=candidates,
+            top_k=request.top_k,
+            similarity_threshold=similarity_threshold,
+        )
+        reliable_candidates = list(selection.selected_candidates)
 
         app_logger.info(
-            "知识库向量检索完成 user_id=%s knowledge_base_id=%s candidates=%s reliable=%s top_k=%s",
+            "知识库两阶段检索完成 user_id=%s knowledge_base_id=%s candidates=%s selected=%s reason=%s top_k=%s",
             user_id,
             knowledge_base_id,
             len(candidates),
             len(reliable_candidates),
+            selection.reason.value,
             request.top_k,
         )
         return KnowledgeSearchResponse(
@@ -162,18 +186,23 @@ class KnowledgeSearchService:
                 candidate_limit=request.top_k * self.candidate_multiplier,
             )
         )
-        reliable_candidates = self._rank_unique_candidates(
-            candidates=candidates,
+        unique_candidates = self._deduplicate_candidates(candidates)
+        selection = await self._select_evidence(
+            query=request.query,
+            candidates=unique_candidates,
             top_k=request.top_k,
             similarity_threshold=similarity_threshold,
         )
+        reliable_candidates = list(selection.selected_candidates)
 
         app_logger.info(
-            "多知识库向量检索完成 user_id=%s knowledge_base_count=%s candidates=%s reliable=%s top_k=%s",
+            "多知识库两阶段检索完成 user_id=%s knowledge_base_count=%s candidates=%s unique=%s selected=%s reason=%s top_k=%s",
             user_id,
             len(knowledge_base_ids),
             len(candidates),
+            len(unique_candidates),
             len(reliable_candidates),
+            selection.reason.value,
             request.top_k,
         )
         return MultiKnowledgeSearchResponse(
@@ -234,19 +263,13 @@ class KnowledgeSearchService:
             )
         return profiles.pop()
 
-    def _rank_unique_candidates(
+    def _deduplicate_candidates(
         self,
         candidates: list[MultiKnowledgeSearchCandidate],
-        top_k: int,
-        similarity_threshold: float,
     ) -> list[MultiKnowledgeSearchCandidate]:
-        """按相似度全局排序，以正文哈希去重并返回达到阈值的 Top-K。"""
+        """在第二阶段前按向量分数排序，并以正文哈希移除跨库重复内容。"""
         ranked = sorted(
-            (
-                candidate
-                for candidate in candidates
-                if candidate.score >= similarity_threshold
-            ),
+            candidates,
             key=lambda candidate: (
                 -candidate.score,
                 str(candidate.knowledge_base_id),
@@ -262,9 +285,37 @@ class KnowledgeSearchService:
                 continue
             seen_content_hashes.add(candidate.content_hash)
             unique_candidates.append(candidate)
-            if len(unique_candidates) == top_k:
-                break
         return unique_candidates
+
+    async def _select_evidence(
+        self,
+        *,
+        query: str,
+        candidates: list[SearchCandidateT],
+        top_k: int,
+        similarity_threshold: float,
+    ) -> EvidenceSelectionResult[SearchCandidateT]:
+        """调用第二阶段并把运行故障与正常证据不足明确区分。"""
+        selection_request = EvidenceSelectionRequest(
+            query=query,
+            candidates=tuple(candidates),
+            top_k=top_k,
+            similarity_threshold=similarity_threshold,
+        )
+        try:
+            result = await self.evidence_selector.select(selection_request)
+            result.ensure_valid_for(selection_request)
+            return result
+        except EvidenceSelectionError as exc:
+            app_logger.warning(
+                "知识检索第二阶段失败 selector=%s",
+                type(self.evidence_selector).__name__,
+            )
+            raise BusinessException(
+                code=ErrorCode.KNOWLEDGE_SEARCH_SELECTOR_UNAVAILABLE,
+                message="证据筛选服务暂时不可用，请稍后重试",
+                status_code=503,
+            ) from exc
 
     def _resolve_similarity_threshold(self, provider: str) -> float:
         """显式覆盖优先，否则按知识库实际 Provider 选择独立校准阈值。"""
