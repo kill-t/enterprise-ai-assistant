@@ -71,3 +71,4 @@
 65. [真实 Embedding 基线与 Provider 独立阈值校准](65-real-embedding-baseline-and-threshold-calibration.md)
 66. [RAG 困难评测集与指标诊断](66-rag-challenge-evaluation-and-diagnostics.md)
 67. [RAG 两阶段检索与 EvidenceSelector 契约](67-rag-two-stage-retrieval-contract.md)
+68. [词法检索接口与 RRF 排名融合](68-lexical-retrieval-and-rrf.md)
