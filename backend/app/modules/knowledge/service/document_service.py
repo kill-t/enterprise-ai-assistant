@@ -10,6 +10,8 @@ from app.common.exception.business_exception import BusinessException
 from app.common.exception.error_code import ErrorCode
 from app.core.loggers import app_logger
 from app.infrastructure.object_storage.base import BaseObjectStorage
+from app.common.enums import DocumentStatus
+from app.modules.knowledge.entity.document import DocumentEntity
 from app.modules.knowledge.entity.knowledge_base import KnowledgeBaseEntity
 from app.modules.knowledge.repository.document_repository import DocumentRepository
 from app.modules.knowledge.repository.knowledge_base_repository import (
@@ -17,6 +19,7 @@ from app.modules.knowledge.repository.knowledge_base_repository import (
 )
 from app.modules.knowledge.schema.document_schema import (
     DocumentResponse,
+    DocumentRetryResponse,
     DocumentUploadResponse,
 )
 
@@ -202,6 +205,155 @@ class DocumentService:
         document_id: UUID,
     ) -> DocumentResponse:
         """返回当前用户拥有的文档状态，并隐藏跨用户资源存在性。"""
+        document = await self._get_owned_document(
+            user_id=user_id,
+            document_id=document_id,
+        )
+        return DocumentResponse.model_validate(document)
+
+    async def retry_document(
+        self,
+        user_id: UUID,
+        document_id: UUID,
+    ) -> DocumentRetryResponse:
+        """为终态失败文档创建新的持久化任务，并在事务提交后尽力投递。"""
+        document = await self._get_owned_document(
+            user_id=user_id,
+            document_id=document_id,
+        )
+        knowledge_base = await self._get_owned_knowledge_base(
+            user_id=user_id,
+            knowledge_base_id=document.knowledge_base_id,
+        )
+        if knowledge_base.is_archived:
+            raise BusinessException(
+                code=ErrorCode.KNOWLEDGE_BASE_ARCHIVED,
+                message="知识库已归档，请先恢复后再重试文档",
+                status_code=409,
+            )
+        if document.status != DocumentStatus.FAILED:
+            raise self._not_retryable_exception()
+
+        job_id = uuid4()
+        try:
+            retried = await self.repository.retry_failed_with_job(
+                document_id=document_id,
+                job_id=job_id,
+            )
+            if retried is None:
+                await self.db.rollback()
+                raise self._not_retryable_exception()
+            retried_document, job = retried
+            await self.db.commit()
+        except BusinessException:
+            raise
+        except Exception:
+            await self.db.rollback()
+            raise
+
+        app_logger.info(
+            "失败文档已创建手动重试任务 user_id=%s document_id=%s job_id=%s",
+            user_id,
+            document_id,
+            job.id,
+        )
+        await self._dispatch_ingestion_safely(job.id)
+        return DocumentRetryResponse(
+            document=DocumentResponse.model_validate(retried_document),
+            job_id=job.id,
+            job_status=job.status,
+        )
+
+    async def delete_document(
+        self,
+        user_id: UUID,
+        document_id: UUID,
+    ) -> None:
+        """使用 DELETED 墓碑协调数据库与对象存储，并最终释放文档唯一约束。"""
+        document = await self.repository.get_by_id_for_user_including_deleted(
+            document_id=document_id,
+            user_id=user_id,
+        )
+        if document is None:
+            raise BusinessException(
+                code=ErrorCode.DOCUMENT_NOT_FOUND,
+                message="文档不存在",
+                status_code=404,
+            )
+        if document.status in {DocumentStatus.PENDING, DocumentStatus.PROCESSING}:
+            raise self._busy_exception()
+
+        if document.status != DocumentStatus.DELETED:
+            try:
+                deleted = await self.repository.mark_deleted_if_terminal(
+                    document_id=document_id,
+                )
+                if deleted is None:
+                    await self.db.rollback()
+                    raise self._busy_exception()
+                document = deleted
+                await self.db.commit()
+            except BusinessException:
+                raise
+            except Exception:
+                await self.db.rollback()
+                raise
+        else:
+            # SELECT 已开启事务；外部 MinIO 调用前先结束数据库事务和连接占用。
+            await self.db.commit()
+
+        await self._delete_document_object(
+            user_id=user_id,
+            document_id=document_id,
+            object_key=document.object_key,
+        )
+
+        try:
+            await self.repository.hard_delete_if_marked(document_id=document_id)
+            # 并发清理者先删除时返回 None 仍可视为最终目标已经达到。
+            await self.db.commit()
+        except Exception:
+            await self.db.rollback()
+            app_logger.exception(
+                "文档对象已删除但墓碑清理失败，等待重复 DELETE 恢复 document_id=%s",
+                document_id,
+            )
+            raise
+
+        app_logger.info(
+            "文档及原对象已删除 user_id=%s document_id=%s",
+            user_id,
+            document_id,
+        )
+
+    async def _delete_document_object(
+        self,
+        user_id: UUID,
+        document_id: UUID,
+        object_key: str,
+    ) -> None:
+        """删除墓碑对应原文件；失败时保留墓碑，使同一 DELETE 可以安全恢复。"""
+        try:
+            await self.object_storage.delete_object(object_key)
+        except Exception as exc:
+            app_logger.warning(
+                "文档对象删除失败，墓碑等待重试 user_id=%s document_id=%s",
+                user_id,
+                document_id,
+                exc_info=True,
+            )
+            raise BusinessException(
+                code=ErrorCode.OBJECT_STORAGE_UNAVAILABLE,
+                message="文件存储服务暂时不可用，文档将在重试后完成删除",
+                status_code=503,
+            ) from exc
+
+    async def _get_owned_document(
+        self,
+        user_id: UUID,
+        document_id: UUID,
+    ) -> DocumentEntity:
+        """统一按知识库所有权读取未删除文档，跨用户访问同样返回 404。"""
         document = await self.repository.get_by_id_for_user(document_id, user_id)
         if document is None:
             raise BusinessException(
@@ -209,7 +361,7 @@ class DocumentService:
                 message="文档不存在",
                 status_code=404,
             )
-        return DocumentResponse.model_validate(document)
+        return document
 
     async def _get_owned_knowledge_base(
         self,
@@ -358,5 +510,23 @@ class DocumentService:
         return BusinessException(
             code=ErrorCode.DOCUMENT_ALREADY_EXISTS,
             message="该知识库中已存在内容相同的文档",
+            status_code=409,
+        )
+
+    @staticmethod
+    def _not_retryable_exception() -> BusinessException:
+        """手动重试只接收没有活动任务的 FAILED 文档。"""
+        return BusinessException(
+            code=ErrorCode.DOCUMENT_NOT_RETRYABLE,
+            message="只有入库失败的文档可以重试",
+            status_code=409,
+        )
+
+    @staticmethod
+    def _busy_exception() -> BusinessException:
+        """活动任务尚无取消协议时，拒绝会与 Worker 竞争的删除操作。"""
+        return BusinessException(
+            code=ErrorCode.DOCUMENT_BUSY,
+            message="文档正在入库，请等待处理完成后再删除",
             status_code=409,
         )

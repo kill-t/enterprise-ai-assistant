@@ -35,3 +35,11 @@ class DocumentUploadResponse(BaseModel):
     document: DocumentResponse
     job_id: UUID
     job_status: DocumentIngestionJobStatus
+
+
+class DocumentRetryResponse(BaseModel):
+    """表示失败文档已原子恢复为等待状态，并创建了新的入库任务。"""
+
+    document: DocumentResponse
+    job_id: UUID
+    job_status: DocumentIngestionJobStatus

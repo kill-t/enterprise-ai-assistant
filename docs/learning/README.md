@@ -61,3 +61,4 @@
 55. [Vue 知识库 API 与状态层](55-vue-knowledge-base-api-and-store.md)
 56. [Vue 知识库列表与创建界面](56-vue-knowledge-base-list-and-create-ui.md)
 57. [Vue 知识库编辑、软归档与恢复](57-vue-knowledge-base-edit-archive-restore.md)
+58. [文档手动重试与可恢复删除](58-document-retry-and-recoverable-delete.md)

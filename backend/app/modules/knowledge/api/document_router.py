@@ -1,12 +1,13 @@
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import APIRouter, File, UploadFile, status
+from fastapi import APIRouter, File, Response, UploadFile, status
 
 from app.modules.identity.dependencies import CurrentUserDep
 from app.modules.knowledge.dependencies import DocumentServiceDep
 from app.modules.knowledge.schema.document_schema import (
     DocumentResponse,
+    DocumentRetryResponse,
     DocumentUploadResponse,
 )
 
@@ -70,3 +71,37 @@ async def get_document(
         user_id=current_user.id,
         document_id=document_id,
     )
+
+
+@document_router.post(
+    "/{document_id}/retry",
+    response_model=DocumentRetryResponse,
+    status_code=status.HTTP_202_ACCEPTED,
+)
+async def retry_document(
+    document_id: UUID,
+    service: DocumentServiceDep,
+    current_user: CurrentUserDep,
+) -> DocumentRetryResponse:
+    """为当前用户的失败文档创建新入库任务。"""
+    return await service.retry_document(
+        user_id=current_user.id,
+        document_id=document_id,
+    )
+
+
+@document_router.delete(
+    "/{document_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+async def delete_document(
+    document_id: UUID,
+    service: DocumentServiceDep,
+    current_user: CurrentUserDep,
+) -> Response:
+    """逻辑删除当前用户拥有且不再执行入库任务的文档。"""
+    await service.delete_document(
+        user_id=current_user.id,
+        document_id=document_id,
+    )
+    return Response(status_code=status.HTTP_204_NO_CONTENT)

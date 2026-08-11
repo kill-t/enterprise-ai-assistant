@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.enums import DocumentIngestionJobStatus, DocumentStatus
@@ -102,5 +102,96 @@ class DocumentRepository:
                 KnowledgeBaseEntity.user_id == user_id,
                 DocumentEntity.status != DocumentStatus.DELETED,
             )
+        )
+        return await self.db.scalar(statement)
+
+    async def retry_failed_with_job(
+        self,
+        document_id: UUID,
+        job_id: UUID,
+    ) -> tuple[DocumentEntity, DocumentIngestionJobEntity] | None:
+        """原子把 FAILED 文档恢复为 PENDING，并新建一条独立任务历史。"""
+        statement = (
+            update(DocumentEntity)
+            .where(
+                DocumentEntity.id == document_id,
+                DocumentEntity.status == DocumentStatus.FAILED,
+            )
+            .values(
+                status=DocumentStatus.PENDING,
+                parser_version=None,
+                chunker_version=None,
+                page_count=0,
+                chunk_count=0,
+                error_code=None,
+                error_message=None,
+                finished_at=None,
+            )
+            .returning(DocumentEntity)
+        )
+        document = await self.db.scalar(statement)
+        if document is None:
+            return None
+
+        job = DocumentIngestionJobEntity(
+            id=job_id,
+            document_id=document_id,
+            idempotency_key=(
+                f"document-ingestion:{document_id}:manual:{job_id}"
+            ),
+            status=DocumentIngestionJobStatus.PENDING,
+        )
+        self.db.add(job)
+        await self.db.flush()
+        await self.db.refresh(document)
+        await self.db.refresh(job)
+        return document, job
+
+    async def get_by_id_for_user_including_deleted(
+        self,
+        document_id: UUID,
+        user_id: UUID,
+    ) -> DocumentEntity | None:
+        """删除恢复流程需要读取 DELETED 墓碑，同时继续执行用户所有权过滤。"""
+        statement = (
+            select(DocumentEntity)
+            .join(
+                KnowledgeBaseEntity,
+                KnowledgeBaseEntity.id == DocumentEntity.knowledge_base_id,
+            )
+            .where(
+                DocumentEntity.id == document_id,
+                KnowledgeBaseEntity.user_id == user_id,
+            )
+        )
+        return await self.db.scalar(statement)
+
+    async def mark_deleted_if_terminal(
+        self,
+        document_id: UUID,
+    ) -> DocumentEntity | None:
+        """只允许 READY 或 FAILED 文档进入逻辑删除，避免与活动 Worker 竞争。"""
+        statement = (
+            update(DocumentEntity)
+            .where(
+                DocumentEntity.id == document_id,
+                DocumentEntity.status.in_(
+                    [DocumentStatus.READY, DocumentStatus.FAILED]
+                ),
+            )
+            .values(status=DocumentStatus.DELETED)
+            .returning(DocumentEntity)
+        )
+        return await self.db.scalar(statement)
+
+    async def hard_delete_if_marked(self, document_id: UUID) -> UUID | None:
+        """对象清理成功后删除 DELETED 墓碑，并由外键级联清理任务和 Chunk。"""
+        statement = (
+            delete(DocumentEntity)
+            .where(
+                DocumentEntity.id == document_id,
+                DocumentEntity.status == DocumentStatus.DELETED,
+            )
+            .returning(DocumentEntity.id)
         )
         return await self.db.scalar(statement)
