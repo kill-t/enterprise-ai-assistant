@@ -9,6 +9,7 @@ from uuid import uuid4
 import pytest
 
 from app.common.enums import MessageRole, MessageStatus
+from app.common.exception.business_exception import BusinessException
 from app.common.exception.error_code import ErrorCode
 from app.infrastructure.llm.context_manager import ContextManager
 from app.infrastructure.llm.history_mapper import HistoryMapper
@@ -19,13 +20,23 @@ from app.infrastructure.llm.schemas import (
     ChatStreamDeltaEvent,
     ChatStreamErrorEvent,
 )
+from app.modules.conversation.schema.conversation_knowledge_search_schema import (
+    ConversationKnowledgeSearchResponse,
+)
 from app.modules.conversation.schema.message_schema import (
     MessageStreamCompletedEvent,
     MessageStreamDeltaEvent,
     MessageStreamErrorEvent,
+    MessageStreamSourcesEvent,
     MessageStreamStartedEvent,
 )
 from app.modules.conversation.service.conversation_service import ConversationService
+from app.modules.conversation.service.grounded_prompt_builder import (
+    GroundedPromptBuilder,
+)
+from app.modules.knowledge.schema.knowledge_search_schema import (
+    MultiKnowledgeSearchHit,
+)
 
 
 class RecordingDatabase:
@@ -66,11 +77,13 @@ class ScriptedStreamProvider:
     def __init__(self, events) -> None:
         """保存本次测试需要播放的事件脚本。"""
         self.events = events
+        self.requests = []
         self.started = False
         self.closed = False
 
     async def stream_chat(self, request):
         """逐项播放脚本，Exception 项用于模拟不遵守契约的 Provider。"""
+        self.requests.append(request)
         self.started = True
         try:
             for event in self.events:
@@ -100,7 +113,11 @@ class BlockingStreamProvider:
             self.closed = True
 
 
-def build_service(provider, event_log: list[str] | None = None):
+def build_service(
+    provider,
+    event_log: list[str] | None = None,
+    knowledge_search_result: ConversationKnowledgeSearchResponse | None = None,
+):
     """组装可观察事务、持久化、缓存和摘要调度的会话服务。"""
     events = event_log if event_log is not None else []
     conversation_id = uuid4()
@@ -174,8 +191,19 @@ def build_service(provider, event_log: list[str] | None = None):
     service.memory_manager = RecordingMemoryManager(events)
     service.provider = provider
     service.prompt_builder = PromptBuilder()
+    service.grounded_prompt_builder = GroundedPromptBuilder()
     service.context_manager = ContextManager()
     service.history_mapper = HistoryMapper()
+    service.knowledge_search_service = SimpleNamespace(
+        search=AsyncMock(
+            return_value=knowledge_search_result
+            or build_knowledge_search_result(
+                conversation_id=conversation_id,
+                searched_knowledge_base_ids=[],
+                results=[],
+            )
+        )
+    )
     return (
         service,
         conversation_id,
@@ -200,6 +228,169 @@ async def collect_stream(service, conversation_id):
 def test_conversation_stream_message_is_an_async_generator() -> None:
     """Service 流必须能被后续 SSE 层使用 async for 消费。"""
     assert inspect.isasyncgenfunction(ConversationService.stream_message)
+
+
+def test_grounded_stream_emits_sources_before_delta_and_persists_same_sources() -> None:
+    """流式 RAG 必须先给出模型实际看到的 S1/S2，再输出正文并保存同一组引用。"""
+    knowledge_base_id = uuid4()
+    first_source = build_search_hit(
+        knowledge_base_id=knowledge_base_id,
+        score=0.93,
+        content="发布前必须完成安全评审。",
+    )
+    second_source = build_search_hit(
+        knowledge_base_id=knowledge_base_id,
+        score=0.82,
+        content="评审负责人需要在任务系统确认。",
+    )
+    provider = ScriptedStreamProvider(
+        [
+            ChatStreamDeltaEvent(delta="发布前需要完成安全评审 [S1]。"),
+            ChatStreamCompletedEvent(
+                response=ChatResponse(
+                    content="发布前需要完成安全评审 [S1]。",
+                    model="mock-stream-grounded",
+                )
+            ),
+        ]
+    )
+    search_result = build_knowledge_search_result(
+        conversation_id=uuid4(),
+        searched_knowledge_base_ids=[knowledge_base_id],
+        results=[first_source, second_source],
+    )
+    service, conversation_id, _, _, _ = build_service(
+        provider,
+        knowledge_search_result=search_result,
+    )
+    # 让检索结果中的会话 ID 与测试 Service 动态生成的会话保持一致。
+    service.knowledge_search_service.search.return_value = search_result.model_copy(
+        update={"conversation_id": conversation_id}
+    )
+
+    stream_events = asyncio.run(collect_stream(service, conversation_id))
+
+    assert [type(event) for event in stream_events] == [
+        MessageStreamStartedEvent,
+        MessageStreamSourcesEvent,
+        MessageStreamDeltaEvent,
+        MessageStreamCompletedEvent,
+    ]
+    sources_event = stream_events[1]
+    assert [item.source_order for item in sources_event.sources] == [1, 2]
+    assert [item.content for item in sources_event.sources] == [
+        first_source.content,
+        second_source.content,
+    ]
+    assert sources_event.message_id == stream_events[0].assistant_message.id
+    assert "[S1]" in provider.requests[0].messages[-1].content
+    service.citation_repository.replace_for_message.assert_awaited_once_with(
+        message_id=stream_events[-1].message.id,
+        sources=(first_source, second_source),
+    )
+
+
+def test_grounded_stream_without_evidence_completes_refusal_without_provider() -> None:
+    """活动知识库没有可靠证据时应先发空 sources，再完成正常拒答且不启动 Provider。"""
+    knowledge_base_id = uuid4()
+    provider = ScriptedStreamProvider([])
+    search_result = build_knowledge_search_result(
+        conversation_id=uuid4(),
+        searched_knowledge_base_ids=[knowledge_base_id],
+        results=[],
+    )
+    service, conversation_id, _, _, _ = build_service(
+        provider,
+        knowledge_search_result=search_result,
+    )
+    service.knowledge_search_service.search.return_value = search_result.model_copy(
+        update={"conversation_id": conversation_id}
+    )
+
+    stream_events = asyncio.run(collect_stream(service, conversation_id))
+
+    assert [type(event) for event in stream_events] == [
+        MessageStreamStartedEvent,
+        MessageStreamSourcesEvent,
+        MessageStreamCompletedEvent,
+    ]
+    assert stream_events[1].sources == []
+    assert stream_events[-1].message.status == MessageStatus.COMPLETED
+    assert stream_events[-1].message.model_name == "grounded-refusal"
+    assert "没有在当前会话已选择的知识库中找到足够可靠的证据" in stream_events[-1].message.content
+    assert provider.started is False
+    service.citation_repository.replace_for_message.assert_awaited_once_with(
+        message_id=stream_events[-1].message.id,
+        sources=(),
+    )
+
+
+def test_stream_search_failure_happens_before_started_and_message_creation() -> None:
+    """Embedding 或检索失败必须在 started 前返回，不能留下用户消息或助手占位。"""
+    provider = ScriptedStreamProvider([])
+    service, conversation_id, repository, _, _ = build_service(provider)
+    service.knowledge_search_service.search.side_effect = BusinessException(
+        code=ErrorCode.KNOWLEDGE_SEARCH_PROVIDER_UNAVAILABLE,
+        message="Embedding 服务暂时不可用",
+        status_code=503,
+    )
+
+    async def scenario() -> None:
+        """读取首个内部事件，触发流式请求的检索准备阶段。"""
+        stream = service.stream_message(
+            user_id=uuid4(),
+            conversation_id=conversation_id,
+            content="发布前要做什么？",
+        )
+        await anext(stream)
+
+    with pytest.raises(BusinessException) as error:
+        asyncio.run(scenario())
+
+    assert error.value.code == ErrorCode.KNOWLEDGE_SEARCH_PROVIDER_UNAVAILABLE
+    assert error.value.status_code == 503
+    repository.create.assert_not_awaited()
+    assert provider.started is False
+
+
+def build_knowledge_search_result(
+    *,
+    conversation_id,
+    searched_knowledge_base_ids,
+    results,
+) -> ConversationKnowledgeSearchResponse:
+    """构造流式 RAG 准备阶段使用的会话知识检索结果。"""
+    return ConversationKnowledgeSearchResponse(
+        conversation_id=conversation_id,
+        query="发布前要做什么？",
+        searched_knowledge_base_ids=searched_knowledge_base_ids,
+        skipped_archived_knowledge_base_ids=[],
+        similarity_threshold=0.2,
+        results=results,
+    )
+
+
+def build_search_hit(
+    *,
+    knowledge_base_id,
+    score: float,
+    content: str,
+) -> MultiKnowledgeSearchHit:
+    """构造模型和 sources 事件必须共享的一条最终证据。"""
+    return MultiKnowledgeSearchHit(
+        knowledge_base_id=knowledge_base_id,
+        knowledge_base_name="项目资料",
+        chunk_id=uuid4(),
+        document_id=uuid4(),
+        filename="release-guide.pdf",
+        chunk_index=0,
+        content=content,
+        heading_path="项目 > 发布",
+        page_start=2,
+        page_end=2,
+        token_count=20,
+        score=score,
+    )
 
 
 def test_stream_creates_message_pair_before_started_and_writes_only_at_end() -> None:

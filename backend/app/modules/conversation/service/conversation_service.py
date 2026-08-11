@@ -63,7 +63,9 @@ from app.modules.conversation.schema.message_schema import (
     MessageStreamCompletedEvent,
     MessageStreamDeltaEvent,
     MessageStreamErrorEvent,
-    MessageStreamEvent,
+    MessageStreamInternalEvent,
+    MessageStreamSource,
+    MessageStreamSourcesEvent,
     MessageStreamStartedEvent,
 )
 from app.modules.conversation.service.conversation_knowledge_search_service import (
@@ -88,6 +90,7 @@ class _AssistantResponsePlan:
     request: ChatRequest | None
     direct_response: ChatResponse | None
     sources: tuple[MultiKnowledgeSearchHit, ...]
+    grounding_applied: bool
 
 
 @dataclass(frozen=True)
@@ -98,6 +101,7 @@ class _MessageGenerationContext:
     request: ChatRequest | None
     direct_response: ChatResponse | None
     sources: tuple[MultiKnowledgeSearchHit, ...]
+    grounding_applied: bool
     user_message: MessageEntity
     assistant_message: MessageEntity
 
@@ -253,15 +257,16 @@ class ConversationService:
         user_id: UUID,
         conversation_id: UUID,
         content: str,
-    ) -> AsyncIterator[MessageStreamEvent]:
+    ) -> AsyncIterator[MessageStreamInternalEvent]:
         """把 Provider 流转换成带消息状态和事务语义的 Service 内部流。"""
         context = await self._prepare_message_generation(
             user_id=user_id,
             conversation_id=conversation_id,
             content=content,
+            enable_grounding=True,
         )
-        if context.request is None:
-            raise RuntimeError("流式消息缺少模型请求")
+        if context.request is None and context.direct_response is None:
+            raise RuntimeError("流式消息缺少模型请求和直接响应")
         assistant_message = context.assistant_message
         content_parts: list[str] = []
         try:
@@ -270,6 +275,28 @@ class ConversationService:
                 user_message=MessageResponse.model_validate(context.user_message),
                 assistant_message=MessageResponse.model_validate(assistant_message),
             )
+
+            if context.grounding_applied:
+                # 来源必须早于第一个 delta，使上层以后能先展示证据再逐段追加正文。
+                yield MessageStreamSourcesEvent(
+                    message_id=assistant_message.id,
+                    sources=self._to_stream_sources(context.sources),
+                )
+
+            if context.direct_response is not None:
+                # 无可靠证据属于正常完成，不启动 Provider，也不伪造逐字输出。
+                completed_message = await self._complete_assistant_response(
+                    conversation=context.conversation,
+                    conversation_id=conversation_id,
+                    assistant_message=assistant_message,
+                    assistant_response=context.direct_response,
+                    sources=context.sources,
+                )
+                yield MessageStreamCompletedEvent(message=completed_message)
+                return
+
+            if context.request is None:
+                raise RuntimeError("流式消息缺少模型请求")
 
             terminal_event: ChatStreamCompletedEvent | ChatStreamErrorEvent | None = (
                 None
@@ -393,6 +420,7 @@ class ConversationService:
                 ),
                 direct_response=None,
                 sources=(),
+                grounding_applied=False,
             )
 
         user_message = MessageEntity(
@@ -424,6 +452,7 @@ class ConversationService:
             request=response_plan.request,
             direct_response=response_plan.direct_response,
             sources=response_plan.sources,
+            grounding_applied=response_plan.grounding_applied,
             user_message=user_message,
             assistant_message=assistant_message,
         )
@@ -540,6 +569,7 @@ class ConversationService:
                 ),
                 direct_response=None,
                 sources=(),
+                grounding_applied=False,
             )
 
         if not search_result.results:
@@ -558,6 +588,7 @@ class ConversationService:
                     total_tokens=0,
                 ),
                 sources=(),
+                grounding_applied=True,
             )
 
         base_system_prompt = self.prompt_builder.resolve_system_prompt(
@@ -591,7 +622,31 @@ class ConversationService:
             request=request,
             direct_response=None,
             sources=tuple(search_result.results),
+            grounding_applied=True,
         )
+
+    @staticmethod
+    def _to_stream_sources(
+        sources: tuple[MultiKnowledgeSearchHit, ...],
+    ) -> list[MessageStreamSource]:
+        """把最终检索来源映射为与 Prompt S1、S2 顺序一致的内部流事件。"""
+        return [
+            MessageStreamSource(
+                knowledge_base_id=source.knowledge_base_id,
+                knowledge_base_name=source.knowledge_base_name,
+                document_id=source.document_id,
+                chunk_id=source.chunk_id,
+                filename=source.filename,
+                chunk_index=source.chunk_index,
+                content=source.content,
+                heading_path=source.heading_path,
+                page_start=source.page_start,
+                page_end=source.page_end,
+                source_order=source_order,
+                score=source.score,
+            )
+            for source_order, source in enumerate(sources, start=1)
+        ]
 
     async def _generate_assistant_response(
         self,

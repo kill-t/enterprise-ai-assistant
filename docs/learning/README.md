@@ -55,3 +55,4 @@
 49. [Grounded Prompt 与无证据拒答](49-grounded-prompt-and-no-evidence-refusal.md)
 50. [消息引用快照与原子持久化](50-message-citation-atomic-persistence.md)
 51. [历史消息引用读取协议](51-history-message-citation-protocol.md)
+52. [流式 RAG 与内部 sources 事件](52-streaming-rag-internal-sources-event.md)

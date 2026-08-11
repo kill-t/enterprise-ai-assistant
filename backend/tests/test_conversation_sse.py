@@ -17,6 +17,7 @@ from app.modules.conversation.schema.message_schema import (
     MessageStreamCompletedEvent,
     MessageStreamDeltaEvent,
     MessageStreamErrorEvent,
+    MessageStreamSourcesEvent,
     MessageStreamStartedEvent,
 )
 from app.modules.identity.dependencies import get_current_user
@@ -177,6 +178,46 @@ def test_stream_route_returns_ordered_sse_and_forwards_identity() -> None:
         conversation_id,
         "整理会议纪要",
     )
+    assert service.closed is True
+
+
+def test_http_sse_temporarily_filters_internal_sources_event() -> None:
+    """内部 sources 契约完成前，HTTP 层不得提前向旧前端发送未知事件。"""
+    events = build_success_events()
+    assistant_message = events[0].assistant_message
+    events.insert(
+        1,
+        MessageStreamSourcesEvent(
+            message_id=assistant_message.id,
+            sources=[],
+        ),
+    )
+    service = FakeStreamingConversationService(events)
+    app = create_app()
+    app.dependency_overrides[get_current_user] = lambda: SimpleNamespace(id=uuid4())
+    app.dependency_overrides[get_conversation_service] = lambda: service
+
+    async def scenario():
+        """请求带内部 sources 的业务流，并收集公开 HTTP 帧。"""
+        async with AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://testserver",
+        ) as client:
+            return await client.post(
+                f"/api/v1/conversations/{uuid4()}/messages/stream",
+                json={"content": "整理会议纪要"},
+            )
+
+    response = asyncio.run(scenario())
+    frames = parse_sse_frames(response.text)
+
+    assert response.status_code == 200
+    assert [event_name for event_name, _ in frames] == [
+        "started",
+        "delta",
+        "delta",
+        "completed",
+    ]
     assert service.closed is True
 
 

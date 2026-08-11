@@ -77,9 +77,10 @@ class MessageHistoryResponse(MessageResponse):
 
 
 class MessageStreamEventType(str, Enum):
-    """区分 Service 流的开始、正文增量、成功完成和失败终点。"""
+    """区分 Service 流的开始、来源、正文增量、成功完成和失败终点。"""
 
     STARTED = "started"
+    SOURCES = "sources"
     DELTA = "delta"
     COMPLETED = "completed"
     ERROR = "error"
@@ -91,6 +92,31 @@ class MessageStreamStartedEvent(BaseModel):
     type: Literal[MessageStreamEventType.STARTED] = MessageStreamEventType.STARTED
     user_message: MessageResponse
     assistant_message: MessageResponse
+
+
+class MessageStreamSource(BaseModel):
+    """描述流式回答生成前模型实际看到的一条最终知识来源。"""
+
+    knowledge_base_id: UUID
+    knowledge_base_name: str
+    document_id: UUID
+    chunk_id: UUID
+    filename: str
+    chunk_index: int = Field(ge=0)
+    content: str
+    heading_path: str | None
+    page_start: int | None
+    page_end: int | None
+    source_order: int = Field(gt=0)
+    score: float = Field(ge=-1.0, le=1.0)
+
+
+class MessageStreamSourcesEvent(BaseModel):
+    """在正文增量前携带本次 Grounded Chat 的有序来源。"""
+
+    type: Literal[MessageStreamEventType.SOURCES] = MessageStreamEventType.SOURCES
+    message_id: UUID
+    sources: list[MessageStreamSource]
 
 
 class MessageStreamDeltaEvent(BaseModel):
@@ -118,6 +144,17 @@ class MessageStreamErrorEvent(BaseModel):
 # 后续 SSE 层只负责序列化该联合类型，不再解释 Provider 厂商事件。
 MessageStreamEvent: TypeAlias = Annotated[
     MessageStreamStartedEvent
+    | MessageStreamDeltaEvent
+    | MessageStreamCompletedEvent
+    | MessageStreamErrorEvent,
+    Field(discriminator="type"),
+]
+
+
+# Service 内部先支持 sources；HTTP 层将在下一模块完成公开协议升级。
+MessageStreamInternalEvent: TypeAlias = Annotated[
+    MessageStreamStartedEvent
+    | MessageStreamSourcesEvent
     | MessageStreamDeltaEvent
     | MessageStreamCompletedEvent
     | MessageStreamErrorEvent,
