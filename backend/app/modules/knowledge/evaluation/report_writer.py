@@ -71,14 +71,15 @@ class RagEvaluationReportWriter:
             f"| 拒答样例 | {report.refusal_cases} |",
             f"| Recall@{report.top_k} | {self._format_rate(report.recall_at_k)} |",
             f"| MRR | {self._format_rate(report.mean_reciprocal_rank)} |",
-            f"| 拒答准确率 | {self._format_rate(report.refusal_accuracy)} |",
+            f"| 整体行为准确率 | {self._format_rate(report.behavior_accuracy)} |",
+            f"| 拒答题准确率 | {self._format_rate(report.refusal_accuracy)} |",
             f"| 引用有效率 | {self._format_rate(report.citation_validity_rate)} |",
             f"| 平均检索延迟 | {self._format_latency(report.average_latency_ms)} |",
             f"| P95 检索延迟 | {self._format_latency(report.p95_latency_ms)} |",
             "",
             "## 逐题明细",
             "",
-            "| case_id | Recall | RR | 召回数 | Top 分数 | 拒答正确 | 引用有效 | 延迟 |",
+            "| case_id | Recall | RR | 召回数 | Top 分数 | 行为正确 | 引用有效 | 延迟 |",
             "| --- | ---: | ---: | ---: | ---: | :---: | :---: | ---: |",
         ]
         for result in report.results:
@@ -89,9 +90,30 @@ class RagEvaluationReportWriter:
                 f"{self._format_rate(result.reciprocal_rank)} | "
                 f"{result.retrieved_count} | "
                 f"{self._format_number(result.top_score)} | "
-                f"{self._format_bool(result.refusal_correct)} | "
+                f"{self._format_bool(result.behavior_correct)} | "
                 f"{self._format_bool(result.citation_valid)} | "
                 f"{self._format_latency(result.latency_ms)} |"
+            )
+        lines.extend(
+            [
+                "",
+                "## 按标签诊断",
+                "",
+                "| 标签 | 样例 | 答案题 | 拒答题 | Recall | MRR | 整体行为 | 拒答题准确率 |",
+                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+            ]
+        )
+        for metric in report.tag_metrics:
+            lines.append(
+                "| "
+                f"{metric.tag} | "
+                f"{metric.total_cases} | "
+                f"{metric.answer_cases} | "
+                f"{metric.refusal_cases} | "
+                f"{self._format_rate(metric.recall_at_k)} | "
+                f"{self._format_rate(metric.mean_reciprocal_rank)} | "
+                f"{self._format_rate(metric.behavior_accuracy)} | "
+                f"{self._format_rate(metric.refusal_accuracy)} |"
             )
         return "\n".join(lines) + "\n"
 

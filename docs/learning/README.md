@@ -69,3 +69,4 @@
 63. [RAG 检索评测 Runner、延迟与双格式报告](63-rag-retrieval-evaluation-runner.md)
 64. [RAG 受控语料、种子数据集与 Mock 基线](64-rag-seed-dataset-and-mock-baseline.md)
 65. [真实 Embedding 基线与 Provider 独立阈值校准](65-real-embedding-baseline-and-threshold-calibration.md)
+66. [RAG 困难评测集与指标诊断](66-rag-challenge-evaluation-and-diagnostics.md)

@@ -157,6 +157,9 @@ def test_report_writer_outputs_utf8_json_and_readable_markdown(tmp_path: Path) -
     assert "# RAG 评测报告" in markdown
     assert "Recall@1" in markdown
     assert "引用有效率 | 不适用" in markdown
+    assert "整体行为准确率" in markdown
+    assert "拒答题准确率" in markdown
+    assert "## 按标签诊断" in markdown
     assert "Top 分数" in markdown
     assert "owner-case" in markdown
 

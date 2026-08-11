@@ -11,6 +11,7 @@ from app.modules.knowledge.evaluation.models import (
     RagEvaluationReport,
     RagExpectedBehavior,
     RagRetrievedSourceEvaluation,
+    RagTagMetrics,
     RetrievedEvidence,
 )
 
@@ -58,6 +59,11 @@ class RagMetricsEvaluator:
         ]
         answer_cases = len(answer_results)
         refusal_cases = len(cases) - answer_cases
+        refusal_results = [
+            result
+            for case, result in zip(cases, results, strict=True)
+            if case.expected_behavior == RagExpectedBehavior.REFUSE
+        ]
         citation_results = [
             result
             for result in results
@@ -89,7 +95,12 @@ class RagMetricsEvaluator:
                 if answer_results
                 else None
             ),
-            refusal_accuracy=fmean(result.refusal_correct for result in results),
+            behavior_accuracy=fmean(result.behavior_correct for result in results),
+            refusal_accuracy=(
+                fmean(result.behavior_correct for result in refusal_results)
+                if refusal_results
+                else None
+            ),
             citation_validity_rate=(
                 fmean(result.citation_valid for result in citation_results)
                 if citation_results
@@ -98,6 +109,7 @@ class RagMetricsEvaluator:
             average_latency_ms=fmean(latencies) if latencies else None,
             p95_latency_ms=self._nearest_rank_percentile(latencies, 0.95),
             results=results,
+            tag_metrics=self._calculate_tag_metrics(cases=cases, results=results),
         )
 
     @staticmethod
@@ -136,7 +148,7 @@ class RagMetricsEvaluator:
     ) -> RagCaseEvaluationResult:
         """计算一个问题的证据命中、首条相关排名、拒答和引用规则。"""
         should_refuse = case.expected_behavior == RagExpectedBehavior.REFUSE
-        refusal_correct = observation.refused == should_refuse
+        behavior_correct = observation.refused == should_refuse
         citation_valid = self._is_citation_valid(observation)
         source_results = tuple(
             RagRetrievedSourceEvaluation(
@@ -160,7 +172,7 @@ class RagMetricsEvaluator:
         if should_refuse:
             return RagCaseEvaluationResult(
                 case_id=case.case_id,
-                refusal_correct=refusal_correct,
+                behavior_correct=behavior_correct,
                 citation_valid=citation_valid,
                 matched_evidence_count=0,
                 expected_evidence_count=0,
@@ -168,6 +180,7 @@ class RagMetricsEvaluator:
                 retrieved_count=len(observation.retrieved_sources),
                 top_score=top_score,
                 retrieved_sources=source_results,
+                tags=case.tags,
             )
 
         top_sources = observation.retrieved_sources[: self.top_k]
@@ -193,7 +206,7 @@ class RagMetricsEvaluator:
             reciprocal_rank=(
                 1 / first_relevant_rank if first_relevant_rank is not None else 0.0
             ),
-            refusal_correct=refusal_correct,
+            behavior_correct=behavior_correct,
             citation_valid=citation_valid,
             matched_evidence_count=matched_count,
             expected_evidence_count=len(case.expected_evidence),
@@ -201,7 +214,64 @@ class RagMetricsEvaluator:
             retrieved_count=len(observation.retrieved_sources),
             top_score=top_score,
             retrieved_sources=source_results,
+            tags=case.tags,
         )
+
+    @staticmethod
+    def _calculate_tag_metrics(
+        *,
+        cases: tuple[RagEvaluationCase, ...],
+        results: tuple[RagCaseEvaluationResult, ...],
+    ) -> tuple[RagTagMetrics, ...]:
+        """按标签生成场景指标，让整体平均值下降时能定位具体短板。"""
+        tagged_results = tuple(zip(cases, results, strict=True))
+        tags = sorted({tag for case in cases for tag in case.tags})
+        metrics: list[RagTagMetrics] = []
+        for tag in tags:
+            selected = [
+                (case, result)
+                for case, result in tagged_results
+                if tag in case.tags
+            ]
+            answer_results = [
+                result
+                for case, result in selected
+                if case.expected_behavior == RagExpectedBehavior.ANSWER
+            ]
+            refusal_results = [
+                result
+                for case, result in selected
+                if case.expected_behavior == RagExpectedBehavior.REFUSE
+            ]
+            metrics.append(
+                RagTagMetrics(
+                    tag=tag,
+                    total_cases=len(selected),
+                    answer_cases=len(answer_results),
+                    refusal_cases=len(refusal_results),
+                    recall_at_k=(
+                        fmean(result.recall_at_k for result in answer_results)
+                        if answer_results
+                        else None
+                    ),
+                    mean_reciprocal_rank=(
+                        fmean(result.reciprocal_rank for result in answer_results)
+                        if answer_results
+                        else None
+                    ),
+                    behavior_accuracy=fmean(
+                        result.behavior_correct for _, result in selected
+                    ),
+                    refusal_accuracy=(
+                        fmean(
+                            result.behavior_correct for result in refusal_results
+                        )
+                        if refusal_results
+                        else None
+                    ),
+                )
+            )
+        return tuple(metrics)
 
     @staticmethod
     def _matches(

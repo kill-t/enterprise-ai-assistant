@@ -1,0 +1,49 @@
+{
+  "dataset": "rag-v2-challenge.jsonl",
+  "corpus_version": "challenge-v2",
+  "top_k": 3,
+  "total_cases": 35,
+  "answer_cases": 25,
+  "refusal_cases": 10,
+  "runs": [
+    {
+      "provider": "mock",
+      "model": "mock-hash-1024",
+      "similarity_threshold": 0.2,
+      "recall_at_3": 0.57,
+      "mean_reciprocal_rank": 0.5533333333333333,
+      "behavior_accuracy": 0.6571428571428571,
+      "refusal_accuracy": 0.4,
+      "average_latency_ms": 20.94489714238859,
+      "p95_latency_ms": 23.07229999860283,
+      "scenario_metrics": {
+        "同义改写": {"recall_at_3": 0.5, "behavior_accuracy": 0.5714285714285714},
+        "多文档": {"recall_at_3": 0.3125, "behavior_accuracy": 0.8},
+        "近似干扰": {"recall_at_3": 0.08333333333333333, "behavior_accuracy": 0.5714285714285714},
+        "困难拒答": {"refusal_accuracy": 0.4}
+      }
+    },
+    {
+      "provider": "openai_compatible",
+      "model": "text-embedding-v4",
+      "similarity_threshold": 0.45,
+      "recall_at_3": 0.7666666666666667,
+      "mean_reciprocal_rank": 0.7933333333333333,
+      "behavior_accuracy": 0.7428571428571429,
+      "refusal_accuracy": 0.1,
+      "average_latency_ms": 2770.3055914275214,
+      "p95_latency_ms": 3972.2086999972817,
+      "scenario_metrics": {
+        "同义改写": {"recall_at_3": 0.7857142857142857, "behavior_accuracy": 1.0},
+        "多文档": {"recall_at_3": 0.5416666666666666, "behavior_accuracy": 0.8},
+        "近似干扰": {"recall_at_3": 0.27777777777777773, "behavior_accuracy": 0.42857142857142855},
+        "困难拒答": {"refusal_accuracy": 0.1}
+      }
+    }
+  ],
+  "decision": {
+    "next_strategy": "two_stage_retrieval",
+    "reason": "真实向量明显改善语义召回，但相似度不能判断证据是否足以回答，单一阈值无法同时保证召回与困难拒答。",
+    "deferred": ["MQE", "HyDE", "knowledge_graph"]
+  }
+}

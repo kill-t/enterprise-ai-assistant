@@ -19,6 +19,15 @@ evaluation/
 - `baselines/text-embedding-v4-1024-v1.json`
 - `baselines/text-embedding-v4-1024-v1.md`
 
+第二批困难评测资产：
+
+- `corpus/challenge-v2/`：三份现行资料和一份历史干扰资料。
+- `datasets/rag-v2-challenge.jsonl`：35 道改写、多文档、干扰和拒答问题。
+- `baselines/rag-v2-challenge-comparison.json`
+- `baselines/rag-v2-challenge-comparison.md`
+
+困难集基线同时记录“整体行为准确率”和“拒答题准确率”。前者观察所有题是否正确选择回答或拒答，后者只观察标准拒答题，二者不能混为一个指标。
+
 运行前应把受控语料上传到目标知识库并等待文档状态变为 `READY`。然后在 `backend` 目录执行：
 
 ```powershell

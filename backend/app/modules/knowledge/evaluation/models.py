@@ -2,7 +2,7 @@
 
 from enum import Enum
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
 
 class RagExpectedBehavior(str, Enum):
@@ -165,7 +165,10 @@ class RagCaseEvaluationResult(BaseModel):
     case_id: str
     recall_at_k: float | None = Field(default=None, ge=0.0, le=1.0)
     reciprocal_rank: float | None = Field(default=None, ge=0.0, le=1.0)
-    refusal_correct: bool
+    # 旧基线使用 refusal_correct；读取时兼容旧字段，新报告统一输出更准确的名称。
+    behavior_correct: bool = Field(
+        validation_alias=AliasChoices("behavior_correct", "refusal_correct")
+    )
     citation_valid: bool | None
     matched_evidence_count: int = Field(ge=0)
     expected_evidence_count: int = Field(ge=0)
@@ -175,6 +178,20 @@ class RagCaseEvaluationResult(BaseModel):
     retrieved_sources: tuple[RagRetrievedSourceEvaluation, ...] = Field(
         default_factory=tuple
     )
+    tags: tuple[str, ...] = Field(default_factory=tuple)
+
+
+class RagTagMetrics(BaseModel):
+    """汇总同一业务场景标签下的检索和拒答表现。"""
+
+    tag: str
+    total_cases: int = Field(gt=0)
+    answer_cases: int = Field(ge=0)
+    refusal_cases: int = Field(ge=0)
+    recall_at_k: float | None = Field(default=None, ge=0.0, le=1.0)
+    mean_reciprocal_rank: float | None = Field(default=None, ge=0.0, le=1.0)
+    behavior_accuracy: float = Field(ge=0.0, le=1.0)
+    refusal_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class RagEvaluationReport(BaseModel):
@@ -188,8 +205,20 @@ class RagEvaluationReport(BaseModel):
     refusal_cases: int = Field(ge=0)
     recall_at_k: float | None = Field(default=None, ge=0.0, le=1.0)
     mean_reciprocal_rank: float | None = Field(default=None, ge=0.0, le=1.0)
-    refusal_accuracy: float = Field(ge=0.0, le=1.0)
+    # behavior_accuracy 负责全部样例；refusal_accuracy 只统计标准行为为拒答的样例。
+    behavior_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
+    refusal_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
     citation_validity_rate: float | None = Field(default=None, ge=0.0, le=1.0)
     average_latency_ms: float | None = Field(default=None, ge=0.0)
     p95_latency_ms: float | None = Field(default=None, ge=0.0)
     results: tuple[RagCaseEvaluationResult, ...]
+    tag_metrics: tuple[RagTagMetrics, ...] = Field(default_factory=tuple)
+
+    @model_validator(mode="before")
+    @classmethod
+    def migrate_legacy_behavior_accuracy(cls, value: object) -> object:
+        """旧报告曾把整体行为准确率写在 refusal_accuracy，读取时保留兼容。"""
+        if isinstance(value, dict) and "behavior_accuracy" not in value:
+            value = dict(value)
+            value["behavior_accuracy"] = value.get("refusal_accuracy")
+        return value

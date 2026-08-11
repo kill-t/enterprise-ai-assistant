@@ -175,6 +175,46 @@ def test_metrics_calculate_recall_mrr_refusal_and_citation_validity() -> None:
     assert report.refusal_cases == 1
 
 
+def test_metrics_separate_overall_behavior_from_refusal_accuracy() -> None:
+    """答案题误拒答只能降低整体行为准确率，不能污染拒答题专项指标。"""
+    cases = (
+        build_answer_case(
+            case_id="known-but-missed",
+            evidence=(("known.md", "资料中存在的答案"),),
+        ).model_copy(update={"tags": ("同义改写",)}),
+        RagEvaluationCase(
+            case_id="unknown-and-refused",
+            question="资料里没有答案的问题",
+            expected_behavior=RagExpectedBehavior.REFUSE,
+            tags=("困难拒答",),
+        ),
+    )
+    observations = (
+        RagEvaluationObservation(
+            case_id="known-but-missed",
+            retrieved_sources=(),
+            refused=True,
+        ),
+        RagEvaluationObservation(
+            case_id="unknown-and-refused",
+            retrieved_sources=(),
+            refused=True,
+        ),
+    )
+
+    report = RagMetricsEvaluator(top_k=3).evaluate(cases, observations)
+
+    assert report.behavior_accuracy == 0.5
+    assert report.refusal_accuracy == 1.0
+    assert report.results[0].behavior_correct is False
+    assert report.results[1].behavior_correct is True
+    assert [metric.tag for metric in report.tag_metrics] == ["同义改写", "困难拒答"]
+    assert report.tag_metrics[0].behavior_accuracy == 0.0
+    assert report.tag_metrics[0].refusal_accuracy is None
+    assert report.tag_metrics[1].behavior_accuracy == 1.0
+    assert report.tag_metrics[1].refusal_accuracy == 1.0
+
+
 def test_metrics_reject_missing_or_unexpected_observation() -> None:
     """样例与实际结果必须一一对应，防止漏跑问题后得到虚假的高分。"""
     case = RagEvaluationCase(
