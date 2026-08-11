@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryHistory, createRouter } from "vue-router";
 
 import * as conversationsApi from "@/api/conversations";
+import * as bindingApi from "@/api/conversation-knowledge-bases";
+import * as knowledgeBasesApi from "@/api/knowledge-bases";
 import * as streamApi from "@/api/conversation-stream";
 import type {
   ConversationResponse,
@@ -22,6 +24,19 @@ vi.mock("@/api/conversations", () => ({
 
 vi.mock("@/api/conversation-stream", () => ({
   streamConversationMessage: vi.fn(),
+}));
+
+vi.mock("@/api/conversation-knowledge-bases", () => ({
+  getConversationKnowledgeBases: vi.fn(),
+  replaceConversationKnowledgeBases: vi.fn(),
+}));
+
+vi.mock("@/api/knowledge-bases", () => ({
+  archiveKnowledgeBase: vi.fn(),
+  createKnowledgeBase: vi.fn(),
+  getKnowledgeBase: vi.fn(),
+  listKnowledgeBases: vi.fn(),
+  updateKnowledgeBase: vi.fn(),
 }));
 
 const conversation: ConversationResponse = {
@@ -97,6 +112,11 @@ async function mountConversationDetailView(initialPath = "/conversations/convers
       { path: "/", name: "home", component: { template: "<p>会话列表</p>" } },
       { path: "/login", name: "login", component: { template: "<p>登录页</p>" } },
       {
+        path: "/knowledge-bases",
+        name: "knowledge-bases",
+        component: { template: "<p>知识库</p>" },
+      },
+      {
         path: "/conversations/:conversationId",
         name: "conversation-detail",
         component: ConversationDetailView,
@@ -114,6 +134,11 @@ async function mountConversationDetailView(initialPath = "/conversations/convers
 beforeEach(() => {
   sessionStorage.clear();
   vi.clearAllMocks();
+  vi.mocked(knowledgeBasesApi.listKnowledgeBases).mockResolvedValue([]);
+  vi.mocked(bindingApi.getConversationKnowledgeBases).mockResolvedValue({
+    conversation_id: "conversation-1",
+    knowledge_bases: [],
+  });
 });
 
 describe("ConversationDetailView", () => {
@@ -176,6 +201,40 @@ describe("ConversationDetailView", () => {
 
     expect(wrapper.get('[data-test="message-empty-state"]').text()).toContain(
       "还没有消息",
+    );
+  });
+
+  it("加载会话时同时展示该会话已经持久化的知识库绑定", async () => {
+    const boundKnowledgeBase = {
+      id: "knowledge-base-1",
+      name: "项目资料库",
+      description: "项目规范和会议资料",
+      embedding_provider: "mock",
+      embedding_model: "mock-hash-1024",
+      embedding_dimension: 1024,
+      is_archived: false,
+      created_at: "2026-08-11T01:00:00Z",
+      updated_at: "2026-08-11T01:00:00Z",
+    };
+    vi.mocked(conversationsApi.getConversation).mockResolvedValue(conversation);
+    vi.mocked(conversationsApi.listConversationMessages).mockResolvedValue([]);
+    vi.mocked(knowledgeBasesApi.listKnowledgeBases).mockResolvedValue([
+      boundKnowledgeBase,
+    ]);
+    vi.mocked(bindingApi.getConversationKnowledgeBases).mockResolvedValue({
+      conversation_id: conversation.id,
+      knowledge_bases: [boundKnowledgeBase],
+    });
+
+    const { wrapper } = await mountConversationDetailView();
+    await flushPromises();
+
+    expect(bindingApi.getConversationKnowledgeBases).toHaveBeenCalledWith(
+      "access-token",
+      conversation.id,
+    );
+    expect(wrapper.get('[data-test="knowledge-context-summary"]').text()).toContain(
+      "项目资料库",
     );
   });
 

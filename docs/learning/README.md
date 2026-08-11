@@ -64,3 +64,4 @@
 58. [文档手动重试与可恢复删除](58-document-retry-and-recoverable-delete.md)
 59. [Vue 文档 API、状态层与可靠轮询](59-vue-document-api-store-and-polling.md)
 60. [Vue 文档管理界面](60-vue-document-management-ui.md)
+61. [Vue 会话知识库选择与原子绑定](61-vue-conversation-knowledge-base-binding.md)

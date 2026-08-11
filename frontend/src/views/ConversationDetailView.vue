@@ -3,6 +3,7 @@ import { ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import type { MessageResponse, MessageRole, MessageStatus } from "@/api/contracts";
+import ConversationKnowledgeBaseSelector from "@/components/ConversationKnowledgeBaseSelector.vue";
 import MessageCitationList from "@/components/MessageCitationList.vue";
 import { useAuthStore } from "@/stores/auth";
 import { useConversationDetailStore } from "@/stores/conversation-detail";
@@ -146,6 +147,11 @@ watch(
             </button>
           </div>
         </section>
+
+        <ConversationKnowledgeBaseSelector
+          :conversation-id="detailStore.conversation.id"
+          :disabled="detailStore.isSending || detailStore.conversation.is_archived"
+        />
 
         <section class="message-history" aria-labelledby="message-history-title">
           <div class="conversation-panel-heading">

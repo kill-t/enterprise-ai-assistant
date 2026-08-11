@@ -161,6 +161,17 @@ export interface KnowledgeBaseUpdateInput {
   is_archived?: boolean;
 }
 
+/** 会话绑定接口返回完整知识库快照，包含后来被归档的既有绑定。 */
+export interface ConversationKnowledgeBaseSelectionResponse {
+  conversation_id: string;
+  knowledge_bases: KnowledgeBaseResponse[];
+}
+
+/** PUT 使用完整 ID 集合原子替换旧绑定；空数组表示解除全部绑定。 */
+export interface ConversationKnowledgeBaseUpdateInput {
+  knowledge_base_ids: string[];
+}
+
 /** 文档从等待后台入库到可检索、失败或被删除的业务状态。 */
 export type DocumentStatus =
   | "pending"

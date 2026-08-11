@@ -1,6 +1,7 @@
 import type { Pinia } from "pinia";
 
 import { useConversationDetailStore } from "@/stores/conversation-detail";
+import { useConversationKnowledgeBaseStore } from "@/stores/conversation-knowledge-bases";
 import { useConversationStore } from "@/stores/conversations";
 import { useDocumentStore } from "@/stores/documents";
 import { useKnowledgeBaseStore } from "@/stores/knowledge-bases";
@@ -11,6 +12,7 @@ import { useKnowledgeBaseStore } from "@/stores/knowledge-bases";
  */
 export function resetUserDataStores(pinia?: Pinia): void {
   useConversationDetailStore(pinia).reset();
+  useConversationKnowledgeBaseStore(pinia).reset();
   useConversationStore(pinia).reset();
   useDocumentStore(pinia).reset();
   useKnowledgeBaseStore(pinia).reset();

@@ -6,6 +6,7 @@ import * as authApi from "@/api/auth";
 import { ApiError } from "@/api/client";
 import { createAppRouter } from "@/router";
 import { useAuthStore } from "@/stores/auth";
+import { useConversationKnowledgeBaseStore } from "@/stores/conversation-knowledge-bases";
 import { useDocumentStore } from "@/stores/documents";
 import { useKnowledgeBaseStore } from "@/stores/knowledge-bases";
 
@@ -37,6 +38,7 @@ describe("认证路由守卫", () => {
     setActivePinia(pinia);
     const knowledgeBaseStore = useKnowledgeBaseStore();
     const documentStore = useDocumentStore();
+    const bindingStore = useConversationKnowledgeBaseStore();
     knowledgeBaseStore.knowledgeBases = [
       {
         id: "old-knowledge-base",
@@ -72,6 +74,8 @@ describe("认证路由守卫", () => {
         },
       ],
     };
+    bindingStore.conversationId = "old-conversation";
+    bindingStore.selectedKnowledgeBaseIds = ["old-knowledge-base"];
     const router = createAppRouter(pinia, createMemoryHistory());
 
     await router.push("/");
@@ -82,6 +86,8 @@ describe("认证路由守卫", () => {
     expect(authApi.getCurrentUser).not.toHaveBeenCalled();
     expect(knowledgeBaseStore.knowledgeBases).toEqual([]);
     expect(documentStore.documentsByKnowledgeBase).toEqual({});
+    expect(bindingStore.conversationId).toBeNull();
+    expect(bindingStore.selectedKnowledgeBaseIds).toEqual([]);
   });
 
   it("未登录用户可以访问注册页", async () => {
