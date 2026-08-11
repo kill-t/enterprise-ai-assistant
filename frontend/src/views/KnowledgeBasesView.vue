@@ -3,6 +3,7 @@ import { computed, nextTick, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 
 import type { KnowledgeBaseResponse } from "@/api/contracts";
+import KnowledgeBaseDocumentsPanel from "@/components/KnowledgeBaseDocumentsPanel.vue";
 import { useAuthStore } from "@/stores/auth";
 import { useKnowledgeBaseStore } from "@/stores/knowledge-bases";
 import { resetUserDataStores } from "@/stores/user-data";
@@ -23,6 +24,7 @@ const editDescription = ref("");
 const editValidationError = ref<string | null>(null);
 const editNameInput = ref<HTMLInputElement | null>(null);
 const archiveTarget = ref<KnowledgeBaseResponse | null>(null);
+const expandedKnowledgeBaseId = ref<string | null>(null);
 
 /** 当前编辑目标是否仍在等待 PATCH，期间对话框字段和关闭操作都要禁用。 */
 const isEditing = computed(
@@ -160,6 +162,9 @@ async function confirmArchiveKnowledgeBase(): Promise<void> {
   }
   const archived = await knowledgeBaseStore.archiveKnowledgeBase(target.id);
   if (archived) {
+    if (expandedKnowledgeBaseId.value === target.id) {
+      expandedKnowledgeBaseId.value = null;
+    }
     closeArchiveDialog();
   }
 }
@@ -169,6 +174,14 @@ async function restoreKnowledgeBase(knowledgeBaseId: string): Promise<void> {
   await knowledgeBaseStore.updateKnowledgeBase(knowledgeBaseId, {
     is_archived: false,
   });
+}
+
+/** 同一时间只展开一个文档区域；旧面板卸载时会自动停止对应轮询。 */
+function toggleDocumentPanel(knowledgeBaseId: string): void {
+  expandedKnowledgeBaseId.value =
+    expandedKnowledgeBaseId.value === knowledgeBaseId
+      ? null
+      : knowledgeBaseId;
 }
 
 /**
@@ -277,7 +290,7 @@ onMounted(() => {
           <p class="section-label">新知识库</p>
           <h2 id="create-knowledge-base-title">创建资料空间</h2>
           <p class="knowledge-panel-description">
-            先创建知识库，下一步再向其中上传 PDF、TXT 或 Markdown 文档。
+            创建知识库后，可以向其中上传 PDF、TXT 或 Markdown 文档。
           </p>
 
           <form
@@ -439,6 +452,16 @@ onMounted(() => {
                 </dl>
                 <div class="knowledge-base-actions" aria-label="知识库管理操作">
                   <button
+                    class="text-button document-management-button"
+                    :data-test="`manage-documents-${knowledgeBase.id}`"
+                    type="button"
+                    :aria-expanded="expandedKnowledgeBaseId === knowledgeBase.id"
+                    :aria-controls="`document-panel-${knowledgeBase.id}`"
+                    @click="toggleDocumentPanel(knowledgeBase.id)"
+                  >
+                    {{ expandedKnowledgeBaseId === knowledgeBase.id ? "收起文档" : knowledgeBase.is_archived ? "查看文档" : "管理文档" }}
+                  </button>
+                  <button
                     class="text-button"
                     :data-test="`edit-knowledge-base-${knowledgeBase.id}`"
                     type="button"
@@ -475,6 +498,10 @@ onMounted(() => {
                 >
                   {{ knowledgeBaseStore.actionErrorMessages[knowledgeBase.id] }}
                 </p>
+                <KnowledgeBaseDocumentsPanel
+                  v-if="expandedKnowledgeBaseId === knowledgeBase.id"
+                  :knowledge-base="knowledgeBase"
+                />
               </article>
             </li>
           </ul>

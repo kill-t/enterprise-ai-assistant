@@ -1,12 +1,17 @@
 import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createMemoryHistory, createRouter } from "vue-router";
 
 import * as knowledgeBasesApi from "@/api/knowledge-bases";
+import * as documentsApi from "@/api/documents";
 import { ApiError } from "@/api/client";
-import type { KnowledgeBaseResponse } from "@/api/contracts";
+import type {
+  DocumentResponse,
+  KnowledgeBaseResponse,
+} from "@/api/contracts";
 import { useAuthStore } from "@/stores/auth";
+import { useDocumentStore } from "@/stores/documents";
 import KnowledgeBasesView from "@/views/KnowledgeBasesView.vue";
 
 vi.mock("@/api/knowledge-bases", () => ({
@@ -15,6 +20,14 @@ vi.mock("@/api/knowledge-bases", () => ({
   getKnowledgeBase: vi.fn(),
   listKnowledgeBases: vi.fn(),
   updateKnowledgeBase: vi.fn(),
+}));
+
+vi.mock("@/api/documents", () => ({
+  deleteDocument: vi.fn(),
+  getDocument: vi.fn(),
+  listDocuments: vi.fn(),
+  retryDocument: vi.fn(),
+  uploadDocument: vi.fn(),
 }));
 
 const knowledgeBase: KnowledgeBaseResponse = {
@@ -34,6 +47,38 @@ const archivedKnowledgeBase: KnowledgeBaseResponse = {
   id: "knowledge-base-2",
   name: "旧项目资料库",
   is_archived: true,
+};
+
+const readyDocument: DocumentResponse = {
+  id: "document-1",
+  knowledge_base_id: knowledgeBase.id,
+  filename: "项目规范.md",
+  mime_type: "text/markdown",
+  size_bytes: 1024,
+  sha256: "a".repeat(64),
+  status: "ready",
+  parser_version: "markdown-v1",
+  chunker_version: "token-v1",
+  page_count: 3,
+  chunk_count: 8,
+  error_code: null,
+  error_message: null,
+  created_at: "2026-08-11T01:00:00Z",
+  updated_at: "2026-08-11T01:01:00Z",
+  finished_at: "2026-08-11T01:01:00Z",
+};
+
+const failedDocument: DocumentResponse = {
+  ...readyDocument,
+  id: "document-2",
+  filename: "扫描文件.pdf",
+  status: "failed",
+  parser_version: null,
+  chunker_version: null,
+  page_count: 0,
+  chunk_count: 0,
+  error_code: "DOCUMENT_NO_EXTRACTABLE_TEXT",
+  error_message: "PDF 没有可提取文本",
 };
 
 /** 挂载知识库页，并提供真实 Pinia Store 和最小路由环境。 */
@@ -66,7 +111,7 @@ async function mountKnowledgeBasesView() {
   const wrapper = mount(KnowledgeBasesView, {
     global: { plugins: [pinia, router] },
   });
-  return { wrapper, router };
+  return { wrapper, router, pinia };
 }
 
 /** 创建由测试手动结束的异步请求，用于观察提交中的真实按钮状态。 */
@@ -81,6 +126,12 @@ function deferred<T>() {
 beforeEach(() => {
   sessionStorage.clear();
   vi.clearAllMocks();
+  vi.mocked(documentsApi.listDocuments).mockResolvedValue([]);
+});
+
+afterEach(() => {
+  // 组件用例可能启动文档轮询，结束时统一释放计时器。
+  useDocumentStore().reset();
 });
 
 describe("KnowledgeBasesView", () => {
@@ -449,5 +500,245 @@ describe("KnowledgeBasesView", () => {
     expect(
       wrapper.find('[data-test="archived-knowledge-base-badge"]').exists(),
     ).toBe(false);
+  });
+
+  it("展开知识库后加载并展示文档状态、大小和处理统计", async () => {
+    vi.mocked(knowledgeBasesApi.listKnowledgeBases).mockResolvedValue([
+      knowledgeBase,
+    ]);
+    vi.mocked(documentsApi.listDocuments).mockResolvedValue([readyDocument]);
+    const { wrapper } = await mountKnowledgeBasesView();
+    await flushPromises();
+
+    await wrapper
+      .get('[data-test="manage-documents-knowledge-base-1"]')
+      .trigger("click");
+    await flushPromises();
+
+    expect(documentsApi.listDocuments).toHaveBeenCalledWith(
+      "access-token",
+      knowledgeBase.id,
+    );
+    const panel = wrapper.get(
+      '[data-test="document-panel-knowledge-base-1"]',
+    );
+    expect(panel.text()).toContain("项目规范.md");
+    expect(panel.text()).toContain("可以检索");
+    expect(panel.text()).toContain("1 KB");
+    expect(panel.text()).toContain("3 页");
+    expect(panel.text()).toContain("8 个 Chunk");
+  });
+
+  it("不支持或超过 20 MB 的文件在前端被拒绝且不发送上传请求", async () => {
+    vi.mocked(knowledgeBasesApi.listKnowledgeBases).mockResolvedValue([
+      knowledgeBase,
+    ]);
+    const { wrapper } = await mountKnowledgeBasesView();
+    await flushPromises();
+    await wrapper
+      .get('[data-test="manage-documents-knowledge-base-1"]')
+      .trigger("click");
+    await flushPromises();
+    const input = wrapper.get(
+      '[data-test="document-file-input-knowledge-base-1"]',
+    );
+
+    const unsupportedFile = new File(["内容"], "程序.exe", {
+      type: "application/octet-stream",
+    });
+    Object.defineProperty(input.element, "files", {
+      configurable: true,
+      value: [unsupportedFile],
+    });
+    await input.trigger("change");
+    expect(wrapper.get('[data-test="document-upload-error"]').text()).toContain(
+      "只支持 PDF、TXT 和 Markdown",
+    );
+
+    const oversizedFile = new File(["内容"], "大文件.pdf", {
+      type: "application/pdf",
+    });
+    Object.defineProperty(oversizedFile, "size", {
+      configurable: true,
+      value: 20 * 1024 * 1024 + 1,
+    });
+    Object.defineProperty(input.element, "files", {
+      configurable: true,
+      value: [oversizedFile],
+    });
+    await input.trigger("change");
+    expect(wrapper.get('[data-test="document-upload-error"]').text()).toContain(
+      "不能超过 20 MB",
+    );
+    expect(documentsApi.uploadDocument).not.toHaveBeenCalled();
+  });
+
+  it("上传期间禁用按钮，成功后立即展示等待处理状态", async () => {
+    vi.mocked(knowledgeBasesApi.listKnowledgeBases).mockResolvedValue([
+      knowledgeBase,
+    ]);
+    const pendingDocument: DocumentResponse = {
+      ...readyDocument,
+      status: "pending",
+      parser_version: null,
+      chunker_version: null,
+      page_count: 0,
+      chunk_count: 0,
+      finished_at: null,
+    };
+    const uploadRequest = deferred<{
+      document: DocumentResponse;
+      job_id: string;
+      job_status: "pending";
+    }>();
+    vi.mocked(documentsApi.uploadDocument).mockReturnValue(
+      uploadRequest.promise,
+    );
+    const { wrapper } = await mountKnowledgeBasesView();
+    await flushPromises();
+    await wrapper
+      .get('[data-test="manage-documents-knowledge-base-1"]')
+      .trigger("click");
+    await flushPromises();
+    const file = new File(["# 项目规范"], "项目规范.md", {
+      type: "text/markdown",
+    });
+    const input = wrapper.get(
+      '[data-test="document-file-input-knowledge-base-1"]',
+    );
+    Object.defineProperty(input.element, "files", {
+      configurable: true,
+      value: [file],
+    });
+    await input.trigger("change");
+
+    await wrapper
+      .get('[data-test="upload-document-knowledge-base-1"]')
+      .trigger("click");
+    await wrapper.vm.$nextTick();
+    const uploadButton = wrapper.get(
+      '[data-test="upload-document-knowledge-base-1"]',
+    );
+    expect(uploadButton.text()).toBe("正在上传…");
+    expect(uploadButton.attributes("disabled")).toBeDefined();
+
+    uploadRequest.resolve({
+      document: pendingDocument,
+      job_id: "job-1",
+      job_status: "pending",
+    });
+    await flushPromises();
+
+    expect(documentsApi.uploadDocument).toHaveBeenCalledWith(
+      "access-token",
+      knowledgeBase.id,
+      file,
+    );
+    expect(wrapper.text()).toContain("等待处理");
+  });
+
+  it("失败文档展示错误并可重试，成功后变为等待处理", async () => {
+    vi.mocked(knowledgeBasesApi.listKnowledgeBases).mockResolvedValue([
+      knowledgeBase,
+    ]);
+    vi.mocked(documentsApi.listDocuments).mockResolvedValue([failedDocument]);
+    vi.mocked(documentsApi.retryDocument).mockResolvedValue({
+      document: {
+        ...failedDocument,
+        status: "pending",
+        error_code: null,
+        error_message: null,
+        finished_at: null,
+      },
+      job_id: "job-2",
+      job_status: "pending",
+    });
+    const { wrapper } = await mountKnowledgeBasesView();
+    await flushPromises();
+    await wrapper
+      .get('[data-test="manage-documents-knowledge-base-1"]')
+      .trigger("click");
+    await flushPromises();
+
+    expect(wrapper.text()).toContain("PDF 没有可提取文本");
+    await wrapper
+      .get('[data-test="retry-document-document-2"]')
+      .trigger("click");
+    await flushPromises();
+
+    expect(documentsApi.retryDocument).toHaveBeenCalledWith(
+      "access-token",
+      failedDocument.id,
+    );
+    expect(wrapper.text()).toContain("等待处理");
+  });
+
+  it("删除必须二次确认，失败时保留文档和确认框中的错误", async () => {
+    vi.mocked(knowledgeBasesApi.listKnowledgeBases).mockResolvedValue([
+      knowledgeBase,
+    ]);
+    vi.mocked(documentsApi.listDocuments).mockResolvedValue([readyDocument]);
+    vi.mocked(documentsApi.deleteDocument).mockRejectedValue(
+      new ApiError("对象存储暂时不可用，可再次删除继续清理", {
+        status: 503,
+        code: "OBJECT_STORAGE_UNAVAILABLE",
+      }),
+    );
+    const { wrapper } = await mountKnowledgeBasesView();
+    await flushPromises();
+    await wrapper
+      .get('[data-test="manage-documents-knowledge-base-1"]')
+      .trigger("click");
+    await flushPromises();
+
+    await wrapper
+      .get('[data-test="delete-document-document-1"]')
+      .trigger("click");
+    expect(documentsApi.deleteDocument).not.toHaveBeenCalled();
+    expect(wrapper.get('[data-test="delete-document-dialog"]').text()).toContain(
+      "项目规范.md",
+    );
+
+    await wrapper.get('[data-test="confirm-delete-document"]').trigger("click");
+    await flushPromises();
+
+    expect(documentsApi.deleteDocument).toHaveBeenCalledWith(
+      "access-token",
+      readyDocument.id,
+    );
+    expect(wrapper.get('[data-test="delete-document-dialog"]').text()).toContain(
+      "再次删除继续清理",
+    );
+    expect(wrapper.text()).toContain("项目规范.md");
+  });
+
+  it("切换文档面板和卸载页面时停止不再观察的轮询", async () => {
+    const secondKnowledgeBase: KnowledgeBaseResponse = {
+      ...knowledgeBase,
+      id: "knowledge-base-2",
+      name: "产品资料库",
+    };
+    vi.mocked(knowledgeBasesApi.listKnowledgeBases).mockResolvedValue([
+      knowledgeBase,
+      secondKnowledgeBase,
+    ]);
+    vi.mocked(documentsApi.listDocuments).mockResolvedValue([]);
+    const { wrapper } = await mountKnowledgeBasesView();
+    await flushPromises();
+    const documentStore = useDocumentStore();
+    const stopPolling = vi.spyOn(documentStore, "stopPolling");
+
+    await wrapper
+      .get('[data-test="manage-documents-knowledge-base-1"]')
+      .trigger("click");
+    await flushPromises();
+    await wrapper
+      .get('[data-test="manage-documents-knowledge-base-2"]')
+      .trigger("click");
+    await flushPromises();
+
+    expect(stopPolling).toHaveBeenCalledWith("knowledge-base-1");
+    wrapper.unmount();
+    expect(stopPolling).toHaveBeenCalledWith("knowledge-base-2");
   });
 });

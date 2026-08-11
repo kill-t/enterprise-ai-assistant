@@ -582,6 +582,260 @@ textarea {
   width: min(100%, 540px);
 }
 
+.document-management-button {
+  margin-right: auto;
+  color: #205f4c;
+}
+
+.document-panel {
+  margin-top: 16px;
+  padding: 18px;
+  border: 1px solid #d7e5de;
+  border-radius: 14px;
+  background: #f7fbf8;
+}
+
+.document-panel-header,
+.document-title-row,
+.document-card,
+.document-actions {
+  display: flex;
+  align-items: center;
+}
+
+.document-panel-header {
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.document-panel-header h4 {
+  margin: 0;
+  color: #214c3f;
+  font-size: 17px;
+}
+
+.document-polling-status {
+  color: #4b7467;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.document-polling-status::before {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  margin-right: 6px;
+  border-radius: 50%;
+  background: #4a9177;
+  content: "";
+}
+
+.document-archived-notice,
+.document-upload-help,
+.document-selected-file,
+.document-list-status,
+.document-operation-error,
+.document-error-detail {
+  line-height: 1.55;
+}
+
+.document-archived-notice {
+  margin: 14px 0 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: #6c6752;
+  background: #f7f2df;
+  font-size: 13px;
+}
+
+.document-upload-area {
+  display: grid;
+  gap: 9px;
+  margin-top: 14px;
+  padding: 14px;
+  border: 1px dashed #bcd4ca;
+  border-radius: 12px;
+  background: #fff;
+}
+
+.document-file-label {
+  display: grid;
+  gap: 7px;
+  color: #315b4f;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.document-file-label input {
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ceded7;
+  border-radius: 9px;
+  color: #3f6257;
+  background: #f9fcfa;
+  font: inherit;
+}
+
+.document-file-label input::file-selector-button {
+  margin-right: 10px;
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 7px;
+  color: #245c49;
+  background: #e3f0ea;
+  cursor: pointer;
+  font-weight: 750;
+}
+
+.document-upload-help,
+.document-selected-file {
+  margin: 0;
+  color: #70837c;
+  font-size: 12px;
+}
+
+.document-selected-file {
+  color: #315f51;
+  font-weight: 700;
+  overflow-wrap: anywhere;
+}
+
+.document-operation-error,
+.document-error-detail {
+  margin: 0;
+  color: #963e32;
+  font-size: 12px;
+}
+
+.document-upload-button {
+  justify-self: start;
+  min-height: 40px;
+  margin: 2px 0 0;
+  padding: 0 16px;
+}
+
+.document-list-status,
+.document-load-error,
+.document-empty-state {
+  margin: 14px 0 0;
+  color: #60766e;
+  font-size: 13px;
+}
+
+.document-load-error,
+.document-empty-state {
+  padding: 13px;
+  border-radius: 11px;
+  background: #fff;
+}
+
+.document-load-error {
+  color: #8c3d34;
+}
+
+.document-load-error p,
+.document-empty-state p {
+  margin: 0;
+}
+
+.document-empty-state {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.document-empty-state > span {
+  color: #6a9a88;
+  font-size: 22px;
+}
+
+.document-list {
+  display: grid;
+  gap: 10px;
+  margin: 15px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.document-card {
+  justify-content: space-between;
+  gap: 14px;
+  padding: 13px;
+  border: 1px solid #dde9e3;
+  border-radius: 11px;
+  background: #fff;
+}
+
+.document-card-main {
+  min-width: 0;
+}
+
+.document-title-row {
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.document-title-row strong {
+  max-width: 100%;
+  color: #294f43;
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+.document-status-badge,
+.document-recovery-badge {
+  padding: 3px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.document-status-pending {
+  color: #715c24;
+  background: #f7edca;
+}
+
+.document-status-processing {
+  color: #315f76;
+  background: #dfeff7;
+}
+
+.document-status-ready {
+  color: #216149;
+  background: #e2f2e9;
+}
+
+.document-status-failed,
+.document-status-deleted,
+.document-recovery-badge {
+  color: #8d3d34;
+  background: #f8e5e1;
+}
+
+.document-statistics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin: 7px 0 0;
+  color: #788a84;
+  font-size: 11px;
+}
+
+.document-error-detail,
+.document-card .document-operation-error {
+  margin-top: 7px;
+}
+
+.document-actions {
+  flex: 0 0 auto;
+  gap: 4px;
+}
+
+.document-dialog-backdrop {
+  z-index: 30;
+}
+
 .conversation-panel {
   margin-top: 52px;
   padding: clamp(24px, 5vw, 42px);
@@ -1372,6 +1626,32 @@ textarea {
 
   .knowledge-base-metadata {
     grid-template-columns: 1fr;
+  }
+
+  .knowledge-base-actions {
+    justify-content: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .document-management-button {
+    width: 100%;
+    margin-right: 0;
+    text-align: left;
+  }
+
+  .document-panel-header,
+  .document-card {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .document-actions,
+  .document-upload-button {
+    width: 100%;
+  }
+
+  .document-actions {
+    justify-content: flex-start;
   }
 
   .conversation-panel-heading {
