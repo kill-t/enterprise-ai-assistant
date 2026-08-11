@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { onMounted, ref } from "vue";
+import { computed, nextTick, onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 
+import type { KnowledgeBaseResponse } from "@/api/contracts";
 import { useAuthStore } from "@/stores/auth";
 import { useKnowledgeBaseStore } from "@/stores/knowledge-bases";
 import { resetUserDataStores } from "@/stores/user-data";
@@ -16,6 +17,43 @@ const name = ref("");
 const description = ref("");
 const formErrorMessage = ref<string | null>(null);
 const createSuccessMessage = ref<string | null>(null);
+const editTarget = ref<KnowledgeBaseResponse | null>(null);
+const editName = ref("");
+const editDescription = ref("");
+const editValidationError = ref<string | null>(null);
+const editNameInput = ref<HTMLInputElement | null>(null);
+const archiveTarget = ref<KnowledgeBaseResponse | null>(null);
+
+/** 当前编辑目标是否仍在等待 PATCH，期间对话框字段和关闭操作都要禁用。 */
+const isEditing = computed(
+  () =>
+    editTarget.value !== null &&
+    knowledgeBaseStore.isUpdatingKnowledgeBase(editTarget.value.id),
+);
+
+/** 编辑错误优先显示本地校验，其次显示 Store 保存的后端单项错误。 */
+const editErrorMessage = computed(() => {
+  if (editValidationError.value) {
+    return editValidationError.value;
+  }
+  return editTarget.value
+    ? knowledgeBaseStore.actionErrorMessages[editTarget.value.id]
+    : undefined;
+});
+
+/** 当前归档确认是否仍在等待 DELETE 的 204 响应。 */
+const isArchiving = computed(
+  () =>
+    archiveTarget.value !== null &&
+    knowledgeBaseStore.isArchivingKnowledgeBase(archiveTarget.value.id),
+);
+
+/** 将归档失败原因绑定到当前确认框，而不是显示成列表级错误。 */
+const archiveErrorMessage = computed(() =>
+  archiveTarget.value
+    ? knowledgeBaseStore.actionErrorMessages[archiveTarget.value.id]
+    : undefined,
+);
 
 /** 按当前筛选重新读取知识库；筛选参数仍由 Store 统一保存。 */
 async function reloadKnowledgeBases(
@@ -35,6 +73,102 @@ async function toggleArchivedKnowledgeBases(): Promise<void> {
 function clearFormFeedback(): void {
   formErrorMessage.value = null;
   createSuccessMessage.value = null;
+}
+
+/** 打开编辑框时复制服务端已保存值，取消编辑不会修改列表对象。 */
+function openEditDialog(knowledgeBase: KnowledgeBaseResponse): void {
+  knowledgeBaseStore.clearActionErrorMessage(knowledgeBase.id);
+  editTarget.value = knowledgeBase;
+  editName.value = knowledgeBase.name;
+  editDescription.value = knowledgeBase.description ?? "";
+  editValidationError.value = null;
+  void nextTick(() => editNameInput.value?.focus());
+}
+
+/** 用户继续修改字段时清除上一轮本地校验错误。 */
+function clearEditValidationError(): void {
+  editValidationError.value = null;
+}
+
+/** PATCH 未结束时禁止关闭，避免用户误以为保存请求已经被取消。 */
+function closeEditDialog(): void {
+  if (isEditing.value) {
+    return;
+  }
+  editTarget.value = null;
+  editName.value = "";
+  editDescription.value = "";
+  editValidationError.value = null;
+}
+
+/** 校验编辑副本，并在后端确认成功后才关闭对话框和展示新卡片。 */
+async function submitKnowledgeBaseEdit(): Promise<void> {
+  const target = editTarget.value;
+  if (!target) {
+    return;
+  }
+
+  const normalizedName = editName.value.trim();
+  const normalizedDescription = editDescription.value.trim();
+  editValidationError.value = null;
+  if (!normalizedName) {
+    editValidationError.value = "知识库名称不能为空";
+    return;
+  }
+  if (normalizedName.length > MAX_NAME_LENGTH) {
+    editValidationError.value =
+      `知识库名称不能超过 ${MAX_NAME_LENGTH} 个字符`;
+    return;
+  }
+  if (normalizedDescription.length > MAX_DESCRIPTION_LENGTH) {
+    editValidationError.value =
+      `知识库描述不能超过 ${MAX_DESCRIPTION_LENGTH} 个字符`;
+    return;
+  }
+
+  const updatedKnowledgeBase = await knowledgeBaseStore.updateKnowledgeBase(
+    target.id,
+    {
+      name: normalizedName,
+      description: normalizedDescription || null,
+    },
+  );
+  if (updatedKnowledgeBase) {
+    closeEditDialog();
+  }
+}
+
+/** 打开归档确认框时只记录目标，不会立即产生 DELETE 请求。 */
+function openArchiveDialog(knowledgeBase: KnowledgeBaseResponse): void {
+  knowledgeBaseStore.clearActionErrorMessage(knowledgeBase.id);
+  archiveTarget.value = knowledgeBase;
+}
+
+/** 归档请求未结束时保持确认框，等待后端给出明确终态。 */
+function closeArchiveDialog(): void {
+  if (isArchiving.value) {
+    return;
+  }
+  archiveTarget.value = null;
+}
+
+/** 只有确认框中的二次操作才会真正调用软归档接口。 */
+async function confirmArchiveKnowledgeBase(): Promise<void> {
+  const target = archiveTarget.value;
+  if (!target) {
+    return;
+  }
+  const archived = await knowledgeBaseStore.archiveKnowledgeBase(target.id);
+  if (archived) {
+    closeArchiveDialog();
+  }
+}
+
+/** 恢复是 PATCH 状态转换；成功响应会直接替换归档卡片。 */
+async function restoreKnowledgeBase(knowledgeBaseId: string): Promise<void> {
+  await knowledgeBaseStore.updateKnowledgeBase(knowledgeBaseId, {
+    is_archived: false,
+  });
 }
 
 /**
@@ -303,11 +437,150 @@ onMounted(() => {
                     <dd>{{ knowledgeBase.embedding_provider }}</dd>
                   </div>
                 </dl>
+                <div class="knowledge-base-actions" aria-label="知识库管理操作">
+                  <button
+                    class="text-button"
+                    :data-test="`edit-knowledge-base-${knowledgeBase.id}`"
+                    type="button"
+                    :disabled="knowledgeBaseStore.isManagingKnowledgeBase(knowledgeBase.id)"
+                    @click="openEditDialog(knowledgeBase)"
+                  >
+                    {{ knowledgeBaseStore.isUpdatingKnowledgeBase(knowledgeBase.id) ? "处理中…" : "编辑" }}
+                  </button>
+                  <button
+                    v-if="!knowledgeBase.is_archived"
+                    class="text-button danger-button"
+                    :data-test="`archive-knowledge-base-${knowledgeBase.id}`"
+                    type="button"
+                    :disabled="knowledgeBaseStore.isManagingKnowledgeBase(knowledgeBase.id)"
+                    @click="openArchiveDialog(knowledgeBase)"
+                  >
+                    {{ knowledgeBaseStore.isArchivingKnowledgeBase(knowledgeBase.id) ? "归档中…" : "归档" }}
+                  </button>
+                  <button
+                    v-else
+                    class="text-button restore-knowledge-base-button"
+                    :data-test="`restore-knowledge-base-${knowledgeBase.id}`"
+                    type="button"
+                    :disabled="knowledgeBaseStore.isManagingKnowledgeBase(knowledgeBase.id)"
+                    @click="restoreKnowledgeBase(knowledgeBase.id)"
+                  >
+                    {{ knowledgeBaseStore.isUpdatingKnowledgeBase(knowledgeBase.id) ? "恢复中…" : "恢复使用" }}
+                  </button>
+                </div>
+                <p
+                  v-if="knowledgeBaseStore.actionErrorMessages[knowledgeBase.id] && editTarget?.id !== knowledgeBase.id && archiveTarget?.id !== knowledgeBase.id"
+                  class="knowledge-base-action-error"
+                  role="alert"
+                >
+                  {{ knowledgeBaseStore.actionErrorMessages[knowledgeBase.id] }}
+                </p>
               </article>
             </li>
           </ul>
         </section>
       </div>
     </main>
+
+    <div
+      v-if="editTarget"
+      class="dialog-backdrop"
+      data-test="edit-knowledge-base-dialog"
+      @click.self="closeEditDialog"
+    >
+      <section
+        class="management-dialog knowledge-edit-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="edit-knowledge-base-title"
+      >
+        <form data-test="edit-knowledge-base-form" @submit.prevent="submitKnowledgeBaseEdit">
+          <p class="section-label">知识库管理</p>
+          <h2 id="edit-knowledge-base-title">编辑知识库</h2>
+          <label class="dialog-field" for="edit-knowledge-base-name">
+            知识库名称
+            <input
+              id="edit-knowledge-base-name"
+              ref="editNameInput"
+              v-model="editName"
+              data-test="edit-knowledge-base-name"
+              type="text"
+              :maxlength="MAX_NAME_LENGTH"
+              autocomplete="off"
+              :disabled="isEditing"
+              @input="clearEditValidationError"
+            >
+          </label>
+          <label class="dialog-field" for="edit-knowledge-base-description">
+            描述（可选）
+            <textarea
+              id="edit-knowledge-base-description"
+              v-model="editDescription"
+              data-test="edit-knowledge-base-description"
+              rows="5"
+              :maxlength="MAX_DESCRIPTION_LENGTH"
+              :disabled="isEditing"
+              @input="clearEditValidationError"
+            />
+          </label>
+          <p class="knowledge-description-count">
+            {{ editDescription.length }} / {{ MAX_DESCRIPTION_LENGTH }}
+          </p>
+          <p
+            v-if="editErrorMessage"
+            class="dialog-error"
+            data-test="edit-knowledge-base-error"
+            role="alert"
+          >
+            {{ editErrorMessage }}
+          </p>
+          <div class="dialog-actions">
+            <button class="secondary-button" type="button" :disabled="isEditing" @click="closeEditDialog">
+              取消
+            </button>
+            <button class="primary-button" type="submit" :disabled="isEditing">
+              {{ isEditing ? "正在保存…" : "保存修改" }}
+            </button>
+          </div>
+        </form>
+      </section>
+    </div>
+
+    <div
+      v-if="archiveTarget"
+      class="dialog-backdrop"
+      data-test="archive-knowledge-base-dialog"
+      @click.self="closeArchiveDialog"
+    >
+      <section
+        class="management-dialog"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="archive-knowledge-base-title"
+      >
+        <p class="section-label">可恢复操作</p>
+        <h2 id="archive-knowledge-base-title">归档知识库</h2>
+        <p class="dialog-description">
+          归档“{{ archiveTarget.name }}”后，它将停止参与检索。系统不会物理删除文档，之后仍可从归档列表恢复。
+        </p>
+        <p v-if="archiveErrorMessage" class="dialog-error" role="alert">
+          {{ archiveErrorMessage }}
+        </p>
+        <div class="dialog-actions">
+          <button class="secondary-button" type="button" :disabled="isArchiving" @click="closeArchiveDialog">
+            取消
+          </button>
+          <button
+            class="danger-confirm-button"
+            data-test="confirm-archive-knowledge-base"
+            type="button"
+            :disabled="isArchiving"
+            @click="confirmArchiveKnowledgeBase"
+          >
+            {{ isArchiving ? "正在归档…" : "确认归档" }}
+          </button>
+        </div>
+      </section>
+    </div>
   </div>
 </template>

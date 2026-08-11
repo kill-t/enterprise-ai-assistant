@@ -554,6 +554,34 @@ textarea {
   white-space: nowrap;
 }
 
+.knowledge-base-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+  margin-top: 15px;
+  padding-top: 12px;
+  border-top: 1px solid #e5ede9;
+}
+
+.restore-knowledge-base-button {
+  color: #22644f;
+}
+
+.restore-knowledge-base-button:hover:not(:disabled) {
+  background: rgb(34 100 79 / 9%);
+}
+
+.knowledge-base-action-error {
+  margin: 10px 0 0;
+  color: #963e32;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.knowledge-edit-dialog {
+  width: min(100%, 540px);
+}
+
 .conversation-panel {
   margin-top: 52px;
   padding: clamp(24px, 5vw, 42px);
@@ -842,6 +870,29 @@ textarea {
 }
 
 .dialog-field input:disabled {
+  cursor: wait;
+  opacity: 0.7;
+}
+
+.dialog-field textarea {
+  width: 100%;
+  padding: 11px 13px;
+  border: 1px solid #d4e1db;
+  border-radius: 12px;
+  outline: none;
+  color: #17332d;
+  background: #fff;
+  font: inherit;
+  line-height: 1.6;
+  resize: vertical;
+}
+
+.dialog-field textarea:focus {
+  border-color: #4d907c;
+  box-shadow: 0 0 0 4px rgb(77 144 124 / 12%);
+}
+
+.dialog-field textarea:disabled {
   cursor: wait;
   opacity: 0.7;
 }

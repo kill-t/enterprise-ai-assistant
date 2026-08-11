@@ -240,4 +240,214 @@ describe("KnowledgeBasesView", () => {
       "项目资料库",
     );
   });
+
+  it("编辑对话框复制当前值，成功后使用后端响应替换卡片", async () => {
+    const updatedKnowledgeBase: KnowledgeBaseResponse = {
+      ...knowledgeBase,
+      name: "项目交付资料库",
+      description: null,
+      updated_at: "2026-08-11T02:00:00Z",
+    };
+    vi.mocked(knowledgeBasesApi.listKnowledgeBases).mockResolvedValue([
+      knowledgeBase,
+    ]);
+    vi.mocked(knowledgeBasesApi.updateKnowledgeBase).mockResolvedValue(
+      updatedKnowledgeBase,
+    );
+    const { wrapper } = await mountKnowledgeBasesView();
+    await flushPromises();
+
+    await wrapper
+      .get('[data-test="edit-knowledge-base-knowledge-base-1"]')
+      .trigger("click");
+
+    expect(
+      (wrapper.get('[data-test="edit-knowledge-base-name"]').element as HTMLInputElement)
+        .value,
+    ).toBe("项目资料库");
+    expect(
+      (wrapper.get('[data-test="edit-knowledge-base-description"]')
+        .element as HTMLTextAreaElement).value,
+    ).toBe("保存项目规范和会议资料");
+
+    await wrapper
+      .get('[data-test="edit-knowledge-base-name"]')
+      .setValue("  项目交付资料库  ");
+    await wrapper
+      .get('[data-test="edit-knowledge-base-description"]')
+      .setValue("   ");
+    await wrapper.get('[data-test="edit-knowledge-base-form"]').trigger("submit");
+    await flushPromises();
+
+    expect(knowledgeBasesApi.updateKnowledgeBase).toHaveBeenCalledWith(
+      "access-token",
+      knowledgeBase.id,
+      { name: "项目交付资料库", description: null },
+    );
+    expect(wrapper.get('[data-test="knowledge-base-list"]').text()).toContain(
+      "项目交付资料库",
+    );
+    expect(wrapper.text()).toContain("暂无描述");
+    expect(wrapper.find('[data-test="edit-knowledge-base-dialog"]').exists()).toBe(
+      false,
+    );
+  });
+
+  it("编辑名称为空时保留对话框并阻止 PATCH 请求", async () => {
+    vi.mocked(knowledgeBasesApi.listKnowledgeBases).mockResolvedValue([
+      knowledgeBase,
+    ]);
+    const { wrapper } = await mountKnowledgeBasesView();
+    await flushPromises();
+    await wrapper
+      .get('[data-test="edit-knowledge-base-knowledge-base-1"]')
+      .trigger("click");
+
+    await wrapper.get('[data-test="edit-knowledge-base-name"]').setValue("   ");
+    await wrapper.get('[data-test="edit-knowledge-base-form"]').trigger("submit");
+
+    expect(wrapper.get('[data-test="edit-knowledge-base-error"]').text()).toBe(
+      "知识库名称不能为空",
+    );
+    expect(knowledgeBasesApi.updateKnowledgeBase).not.toHaveBeenCalled();
+    expect(wrapper.find('[data-test="edit-knowledge-base-dialog"]').exists()).toBe(
+      true,
+    );
+  });
+
+  it("编辑被后端拒绝时保留原卡片和对话框中的单项错误", async () => {
+    vi.mocked(knowledgeBasesApi.listKnowledgeBases).mockResolvedValue([
+      knowledgeBase,
+    ]);
+    vi.mocked(knowledgeBasesApi.updateKnowledgeBase).mockRejectedValue(
+      new ApiError("知识库名称已经存在", {
+        status: 409,
+        code: "KNOWLEDGE_BASE_NAME_EXISTS",
+      }),
+    );
+    const { wrapper } = await mountKnowledgeBasesView();
+    await flushPromises();
+    await wrapper
+      .get('[data-test="edit-knowledge-base-knowledge-base-1"]')
+      .trigger("click");
+    await wrapper
+      .get('[data-test="edit-knowledge-base-name"]')
+      .setValue("产品手册库");
+
+    await wrapper.get('[data-test="edit-knowledge-base-form"]').trigger("submit");
+    await flushPromises();
+
+    expect(wrapper.get('[data-test="edit-knowledge-base-error"]').text()).toBe(
+      "知识库名称已经存在",
+    );
+    expect(wrapper.get('[data-test="knowledge-base-list"]').text()).toContain(
+      "项目资料库",
+    );
+    expect(wrapper.get('[data-test="knowledge-base-list"]').text()).not.toContain(
+      "产品手册库",
+    );
+    expect(wrapper.find('[data-test="edit-knowledge-base-dialog"]').exists()).toBe(
+      true,
+    );
+  });
+
+  it("归档前显示可恢复说明，确认成功后从活动列表移除", async () => {
+    vi.mocked(knowledgeBasesApi.listKnowledgeBases).mockResolvedValue([
+      knowledgeBase,
+    ]);
+    const archiveRequest = deferred<void>();
+    vi.mocked(knowledgeBasesApi.archiveKnowledgeBase).mockReturnValue(
+      archiveRequest.promise,
+    );
+    const { wrapper } = await mountKnowledgeBasesView();
+    await flushPromises();
+
+    await wrapper
+      .get('[data-test="archive-knowledge-base-knowledge-base-1"]')
+      .trigger("click");
+    expect(wrapper.get('[data-test="archive-knowledge-base-dialog"]').text()).toContain(
+      "不会物理删除文档",
+    );
+    expect(knowledgeBasesApi.archiveKnowledgeBase).not.toHaveBeenCalled();
+
+    await wrapper.get('[data-test="confirm-archive-knowledge-base"]').trigger("click");
+    await wrapper.vm.$nextTick();
+    const confirmButton = wrapper.get(
+      '[data-test="confirm-archive-knowledge-base"]',
+    );
+    expect(confirmButton.text()).toBe("正在归档…");
+    expect(confirmButton.attributes("disabled")).toBeDefined();
+
+    archiveRequest.resolve(undefined);
+    await flushPromises();
+
+    expect(knowledgeBasesApi.archiveKnowledgeBase).toHaveBeenCalledWith(
+      "access-token",
+      knowledgeBase.id,
+    );
+    expect(wrapper.get('[data-test="knowledge-base-empty-state"]').text()).toContain(
+      "还没有知识库",
+    );
+    expect(wrapper.find('[data-test="archive-knowledge-base-dialog"]').exists()).toBe(
+      false,
+    );
+  });
+
+  it("归档失败时保留确认框、原卡片和后端中文错误", async () => {
+    vi.mocked(knowledgeBasesApi.listKnowledgeBases).mockResolvedValue([
+      knowledgeBase,
+    ]);
+    vi.mocked(knowledgeBasesApi.archiveKnowledgeBase).mockRejectedValue(
+      new ApiError("知识库仍有正在运行的入库任务", {
+        status: 409,
+        code: "KNOWLEDGE_BASE_HAS_RUNNING_JOBS",
+      }),
+    );
+    const { wrapper } = await mountKnowledgeBasesView();
+    await flushPromises();
+    await wrapper
+      .get('[data-test="archive-knowledge-base-knowledge-base-1"]')
+      .trigger("click");
+    await wrapper.get('[data-test="confirm-archive-knowledge-base"]').trigger("click");
+    await flushPromises();
+
+    expect(wrapper.get('[data-test="archive-knowledge-base-dialog"]').text()).toContain(
+      "知识库仍有正在运行的入库任务",
+    );
+    expect(wrapper.get('[data-test="knowledge-base-list"]').text()).toContain(
+      "项目资料库",
+    );
+  });
+
+  it("已归档知识库可以通过 PATCH 恢复，并重新显示使用中状态", async () => {
+    const restoredKnowledgeBase = {
+      ...archivedKnowledgeBase,
+      is_archived: false,
+    };
+    vi.mocked(knowledgeBasesApi.listKnowledgeBases).mockResolvedValue([
+      archivedKnowledgeBase,
+    ]);
+    vi.mocked(knowledgeBasesApi.updateKnowledgeBase).mockResolvedValue(
+      restoredKnowledgeBase,
+    );
+    const { wrapper } = await mountKnowledgeBasesView();
+    await flushPromises();
+
+    await wrapper
+      .get('[data-test="restore-knowledge-base-knowledge-base-2"]')
+      .trigger("click");
+    await flushPromises();
+
+    expect(knowledgeBasesApi.updateKnowledgeBase).toHaveBeenCalledWith(
+      "access-token",
+      archivedKnowledgeBase.id,
+      { is_archived: false },
+    );
+    expect(wrapper.get('[data-test="knowledge-base-list"]').text()).toContain(
+      "使用中",
+    );
+    expect(
+      wrapper.find('[data-test="archived-knowledge-base-badge"]').exists(),
+    ).toBe(false);
+  });
 });

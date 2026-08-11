@@ -60,3 +60,4 @@
 54. [Vue RAG 引用卡片](54-vue-rag-citation-cards.md)
 55. [Vue 知识库 API 与状态层](55-vue-knowledge-base-api-and-store.md)
 56. [Vue 知识库列表与创建界面](56-vue-knowledge-base-list-and-create-ui.md)
+57. [Vue 知识库编辑、软归档与恢复](57-vue-knowledge-base-edit-archive-restore.md)

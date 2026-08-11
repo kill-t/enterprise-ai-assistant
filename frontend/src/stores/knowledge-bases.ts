@@ -78,6 +78,14 @@ export const useKnowledgeBaseStore = defineStore("knowledge-bases", {
       this.errorMessage = null;
     },
 
+    /** 打开新的单项操作前清除该知识库上一次失败留下的提示。 */
+    clearActionErrorMessage(knowledgeBaseId: string): void {
+      this.actionErrorMessages = clearActionError(
+        this.actionErrorMessages,
+        knowledgeBaseId,
+      );
+    },
+
     /** Token 缺失时清除旧账号数据，并阻止受保护请求发出。 */
     resetForMissingToken(): void {
       this.$reset();
