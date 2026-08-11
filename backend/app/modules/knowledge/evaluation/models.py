@@ -149,6 +149,16 @@ class RagEvaluationObservation(BaseModel):
         return self
 
 
+class RagRetrievedSourceEvaluation(BaseModel):
+    """保存不含原文的来源排名、分数和标准证据命中判断。"""
+
+    rank: int = Field(ge=1)
+    source_id: str
+    filename: str
+    score: float | None = Field(default=None, ge=-1.0, le=1.0)
+    relevant: bool
+
+
 class RagCaseEvaluationResult(BaseModel):
     """保存单个问题的指标明细，方便定位整体分数下降的原因。"""
 
@@ -160,6 +170,11 @@ class RagCaseEvaluationResult(BaseModel):
     matched_evidence_count: int = Field(ge=0)
     expected_evidence_count: int = Field(ge=0)
     latency_ms: float | None = Field(default=None, ge=0.0)
+    retrieved_count: int = Field(default=0, ge=0)
+    top_score: float | None = Field(default=None, ge=-1.0, le=1.0)
+    retrieved_sources: tuple[RagRetrievedSourceEvaluation, ...] = Field(
+        default_factory=tuple
+    )
 
 
 class RagEvaluationReport(BaseModel):

@@ -42,6 +42,12 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--top-k", type=int, default=5, help="检索返回数量，范围 1 到 20")
     parser.add_argument(
+        "--similarity-threshold",
+        type=float,
+        default=None,
+        help="仅用于评测实验的相似度阈值覆盖；默认读取项目配置",
+    )
+    parser.add_argument(
         "--output-directory",
         type=Path,
         default=Path("evaluation/reports"),
@@ -61,13 +67,14 @@ async def execute_evaluation(
     user_id: UUID,
     knowledge_base_id: UUID,
     top_k: int,
+    similarity_threshold: float | None = None,
 ) -> RagEvaluationReport:
     """在一个只读数据库 Session 中组装在线检索 Service 并运行评测。"""
     async with SessionLocal() as db:
         search_service = KnowledgeSearchService(
             db=db,
             embedding_factory=EmbeddingProviderFactory(),
-            similarity_threshold=settings.rag.search_similarity_threshold,
+            similarity_threshold=similarity_threshold,
             candidate_multiplier=settings.rag.search_candidate_multiplier,
         )
         runner = RagRetrievalEvaluationRunner(
@@ -93,6 +100,7 @@ def main(argv: Sequence[str] | None = None) -> int:
                 user_id=args.user_id,
                 knowledge_base_id=args.knowledge_base_id,
                 top_k=args.top_k,
+                similarity_threshold=args.similarity_threshold,
             )
         )
         report_name = args.report_name or datetime.now(UTC).strftime(

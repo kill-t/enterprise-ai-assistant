@@ -42,11 +42,8 @@ class KnowledgeSearchService:
         self.knowledge_base_repository = KnowledgeBaseRepository(db)
         self.search_repository = KnowledgeSearchRepository(db)
         self.embedding_factory = embedding_factory or EmbeddingProviderFactory()
-        self.similarity_threshold = (
-            settings.rag.search_similarity_threshold
-            if similarity_threshold is None
-            else similarity_threshold
-        )
+        # 显式值只用于测试或评测实验；None 时按知识库 Provider 动态选择阈值。
+        self.similarity_threshold = similarity_threshold
         self.candidate_multiplier = (
             settings.rag.search_candidate_multiplier
             if candidate_multiplier is None
@@ -73,6 +70,7 @@ class KnowledgeSearchService:
             model=knowledge_base.embedding_model,
             dimension=knowledge_base.embedding_dimension,
         )
+        similarity_threshold = self._resolve_similarity_threshold(profile.provider)
         embedding_result = await self._embed_query(
             request.query,
             profile=profile,
@@ -92,7 +90,7 @@ class KnowledgeSearchService:
         reliable_candidates = [
             candidate
             for candidate in candidates
-            if candidate.score >= self.similarity_threshold
+            if candidate.score >= similarity_threshold
         ][: request.top_k]
 
         app_logger.info(
@@ -107,7 +105,7 @@ class KnowledgeSearchService:
             knowledge_base_id=knowledge_base_id,
             query=request.query,
             embedding_model=profile.model,
-            similarity_threshold=self.similarity_threshold,
+            similarity_threshold=similarity_threshold,
             results=[
                 KnowledgeSearchHit.model_validate(candidate)
                 for candidate in reliable_candidates
@@ -129,11 +127,12 @@ class KnowledgeSearchService:
             return MultiKnowledgeSearchResponse(
                 query=request.query,
                 searched_knowledge_base_ids=[],
-                similarity_threshold=self.similarity_threshold,
+                similarity_threshold=self._resolve_similarity_threshold("mock"),
                 results=[],
             )
 
         profile = self._get_shared_embedding_profile(unique_knowledge_bases)
+        similarity_threshold = self._resolve_similarity_threshold(profile.provider)
         knowledge_base_ids = [item.id for item in unique_knowledge_bases]
         incompatible_ids = (
             await self.search_repository.list_incompatible_ready_knowledge_base_ids(
@@ -166,6 +165,7 @@ class KnowledgeSearchService:
         reliable_candidates = self._rank_unique_candidates(
             candidates=candidates,
             top_k=request.top_k,
+            similarity_threshold=similarity_threshold,
         )
 
         app_logger.info(
@@ -179,7 +179,7 @@ class KnowledgeSearchService:
         return MultiKnowledgeSearchResponse(
             query=request.query,
             searched_knowledge_base_ids=knowledge_base_ids,
-            similarity_threshold=self.similarity_threshold,
+            similarity_threshold=similarity_threshold,
             results=[
                 MultiKnowledgeSearchHit.model_validate(candidate)
                 for candidate in reliable_candidates
@@ -238,13 +238,14 @@ class KnowledgeSearchService:
         self,
         candidates: list[MultiKnowledgeSearchCandidate],
         top_k: int,
+        similarity_threshold: float,
     ) -> list[MultiKnowledgeSearchCandidate]:
         """按相似度全局排序，以正文哈希去重并返回达到阈值的 Top-K。"""
         ranked = sorted(
             (
                 candidate
                 for candidate in candidates
-                if candidate.score >= self.similarity_threshold
+                if candidate.score >= similarity_threshold
             ),
             key=lambda candidate: (
                 -candidate.score,
@@ -264,6 +265,12 @@ class KnowledgeSearchService:
             if len(unique_candidates) == top_k:
                 break
         return unique_candidates
+
+    def _resolve_similarity_threshold(self, provider: str) -> float:
+        """显式覆盖优先，否则按知识库实际 Provider 选择独立校准阈值。"""
+        if self.similarity_threshold is not None:
+            return self.similarity_threshold
+        return settings.rag.similarity_threshold_for(provider)
 
     async def _get_searchable_knowledge_base(
         self,

@@ -78,8 +78,8 @@ class RagEvaluationReportWriter:
             "",
             "## 逐题明细",
             "",
-            "| case_id | Recall | RR | 拒答正确 | 引用有效 | 延迟 |",
-            "| --- | ---: | ---: | :---: | :---: | ---: |",
+            "| case_id | Recall | RR | 召回数 | Top 分数 | 拒答正确 | 引用有效 | 延迟 |",
+            "| --- | ---: | ---: | ---: | ---: | :---: | :---: | ---: |",
         ]
         for result in report.results:
             lines.append(
@@ -87,6 +87,8 @@ class RagEvaluationReportWriter:
                 f"{result.case_id} | "
                 f"{self._format_rate(result.recall_at_k)} | "
                 f"{self._format_rate(result.reciprocal_rank)} | "
+                f"{result.retrieved_count} | "
+                f"{self._format_number(result.top_score)} | "
                 f"{self._format_bool(result.refusal_correct)} | "
                 f"{self._format_bool(result.citation_valid)} | "
                 f"{self._format_latency(result.latency_ms)} |"

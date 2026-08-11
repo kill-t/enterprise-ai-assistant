@@ -2,7 +2,7 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import BaseModel, Field, SecretStr, model_validator
+from pydantic import BaseModel, Field, SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -37,12 +37,20 @@ class EmbeddingSettings(BaseModel):
     base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
     model: str = "text-embedding-v4"
     mock_model: str = "mock-hash-1024"
-    # 第一版数据库列固定为 vector(1024)，配置层直接阻止维度漂移。
-    dimension: Literal[1024] = 1024
+    # 环境变量以字符串进入配置层，先按 int 解析，再由校验器阻止维度漂移。
+    dimension: int = Field(default=1024, gt=0)
     # text-embedding-v4 官方同步接口单批最多接受 10 条文本。
     batch_size: int = Field(default=10, gt=0, le=10)
     timeout_seconds: float = Field(default=30.0, gt=0)
     max_retries: int = Field(default=2, ge=0, le=10)
+
+    @field_validator("dimension")
+    @classmethod
+    def validate_database_dimension(cls, value: int) -> int:
+        """第一版数据库列固定为 vector(1024)，其他维度必须重新迁移后才能使用。"""
+        if value != 1024:
+            raise ValueError("Embedding 维度必须与数据库 vector(1024) 一致")
+        return value
 
 
 class RagSettings(BaseModel):
@@ -50,9 +58,22 @@ class RagSettings(BaseModel):
 
     chunk_size_tokens: int = Field(default=600, gt=0)
     chunk_overlap_tokens: int = Field(default=80, ge=0)
-    # 初始阈值只用于工程演示，RAG-6 会用评测集重新校准。
-    search_similarity_threshold: float = Field(default=0.2, ge=-1.0, le=1.0)
+    # 不同 Embedding 的分数分布不可直接比较，阈值必须按 Provider 分开校准。
+    mock_similarity_threshold: float = Field(default=0.2, ge=-1.0, le=1.0)
+    openai_compatible_similarity_threshold: float = Field(
+        default=0.45,
+        ge=-1.0,
+        le=1.0,
+    )
     search_candidate_multiplier: int = Field(default=4, ge=1, le=20)
+
+    def similarity_threshold_for(self, provider: str) -> float:
+        """根据知识库冻结的 Provider 返回经过独立评测的可靠性阈值。"""
+        if provider == "mock":
+            return self.mock_similarity_threshold
+        if provider == "openai_compatible":
+            return self.openai_compatible_similarity_threshold
+        raise ValueError("不支持该 Embedding Provider 的检索阈值")
 
     @model_validator(mode="after")
     def validate_chunk_budget(self) -> "RagSettings":

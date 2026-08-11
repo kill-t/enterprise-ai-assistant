@@ -105,6 +105,12 @@ def test_retrieval_runner_calls_search_service_and_builds_metrics() -> None:
     assert report.average_latency_ms == pytest.approx(8.0)
     assert report.p95_latency_ms == pytest.approx(12.0)
     assert report.results[0].latency_ms == pytest.approx(12.0)
+    assert report.results[0].retrieved_count == 1
+    assert report.results[0].top_score == 0.91
+    assert report.results[0].retrieved_sources[0].rank == 1
+    assert report.results[0].retrieved_sources[0].relevant is True
+    assert report.results[1].retrieved_count == 0
+    assert report.results[1].top_score is None
     assert report.results[1].latency_ms == pytest.approx(4.0)
 
 
@@ -151,6 +157,7 @@ def test_report_writer_outputs_utf8_json_and_readable_markdown(tmp_path: Path) -
     assert "# RAG 评测报告" in markdown
     assert "Recall@1" in markdown
     assert "引用有效率 | 不适用" in markdown
+    assert "Top 分数" in markdown
     assert "owner-case" in markdown
 
     with pytest.raises(ValueError, match="报告名称"):

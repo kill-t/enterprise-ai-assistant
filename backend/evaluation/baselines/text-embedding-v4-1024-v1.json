@@ -1,0 +1,30 @@
+{
+  "embedding_model": "text-embedding-v4",
+  "similarity_threshold": 0.45,
+  "top_k": 3,
+  "total_cases": 14,
+  "answer_cases": 10,
+  "refusal_cases": 4,
+  "recall_at_k": 1.0,
+  "mean_reciprocal_rank": 0.85,
+  "refusal_accuracy": 1.0,
+  "citation_validity_rate": null,
+  "average_latency_ms": 4084.327099999687,
+  "p95_latency_ms": 8058.035199996084,
+  "results": [
+    {"case_id":"project-identity-owner","recall_at_k":1.0,"reciprocal_rank":1.0,"refusal_correct":true,"citation_valid":null,"matched_evidence_count":2,"expected_evidence_count":2,"latency_ms":8058.035199996084,"retrieved_count":2,"top_score":0.8077065944671631},
+    {"case_id":"project-first-scope","recall_at_k":1.0,"reciprocal_rank":0.5,"refusal_correct":true,"citation_valid":null,"matched_evidence_count":1,"expected_evidence_count":1,"latency_ms":2904.30059999926,"retrieved_count":3,"top_score":0.6825776100158691},
+    {"case_id":"meeting-schedule","recall_at_k":1.0,"reciprocal_rank":1.0,"refusal_correct":true,"citation_valid":null,"matched_evidence_count":1,"expected_evidence_count":1,"latency_ms":4032.4347999994643,"retrieved_count":2,"top_score":0.8080628261453835},
+    {"case_id":"meeting-goal","recall_at_k":1.0,"reciprocal_rank":0.5,"refusal_correct":true,"citation_valid":null,"matched_evidence_count":1,"expected_evidence_count":1,"latency_ms":3352.1964000101434,"retrieved_count":2,"top_score":0.7400848865509033},
+    {"case_id":"raw-file-storage","recall_at_k":1.0,"reciprocal_rank":1.0,"refusal_correct":true,"citation_valid":null,"matched_evidence_count":1,"expected_evidence_count":1,"latency_ms":4583.87539999967,"retrieved_count":3,"top_score":0.7243688106536865},
+    {"case_id":"vector-metadata-storage","recall_at_k":1.0,"reciprocal_rank":1.0,"refusal_correct":true,"citation_valid":null,"matched_evidence_count":1,"expected_evidence_count":1,"latency_ms":3750.9395999950357,"retrieved_count":2,"top_score":0.7186718322429908},
+    {"case_id":"redis-responsibility","recall_at_k":1.0,"reciprocal_rank":1.0,"refusal_correct":true,"citation_valid":null,"matched_evidence_count":1,"expected_evidence_count":1,"latency_ms":3201.3041000027442,"retrieved_count":3,"top_score":0.7074656835239361},
+    {"case_id":"supported-formats-ocr","recall_at_k":1.0,"reciprocal_rank":1.0,"refusal_correct":true,"citation_valid":null,"matched_evidence_count":1,"expected_evidence_count":1,"latency_ms":3023.366300010821,"retrieved_count":2,"top_score":0.5763063430786133},
+    {"case_id":"no-evidence-policy","recall_at_k":1.0,"reciprocal_rank":0.5,"refusal_correct":true,"citation_valid":null,"matched_evidence_count":1,"expected_evidence_count":1,"latency_ms":4983.413800000562,"retrieved_count":2,"top_score":0.6214578458171258},
+    {"case_id":"redis-failure-recovery","recall_at_k":1.0,"reciprocal_rank":1.0,"refusal_correct":true,"citation_valid":null,"matched_evidence_count":2,"expected_evidence_count":2,"latency_ms":4577.29269999254,"retrieved_count":2,"top_score":0.6697427821772618},
+    {"case_id":"unknown-bronze-casting","recall_at_k":null,"reciprocal_rank":null,"refusal_correct":true,"citation_valid":null,"matched_evidence_count":0,"expected_evidence_count":0,"latency_ms":5247.5664999947185,"retrieved_count":0,"top_score":null},
+    {"case_id":"unknown-octopus-neurons","recall_at_k":null,"reciprocal_rank":null,"refusal_correct":true,"citation_valid":null,"matched_evidence_count":0,"expected_evidence_count":0,"latency_ms":3437.3191999911796,"retrieved_count":0,"top_score":null},
+    {"case_id":"unknown-rainforest-rainfall","recall_at_k":null,"reciprocal_rank":null,"refusal_correct":true,"citation_valid":null,"matched_evidence_count":0,"expected_evidence_count":0,"latency_ms":2999.9677000014344,"retrieved_count":0,"top_score":null},
+    {"case_id":"unknown-orbital-fuel","recall_at_k":null,"reciprocal_rank":null,"refusal_correct":true,"citation_valid":null,"matched_evidence_count":0,"expected_evidence_count":0,"latency_ms":3028.5671000019647,"retrieved_count":0,"top_score":null}
+  ]
+}

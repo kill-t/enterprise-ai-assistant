@@ -16,6 +16,8 @@ evaluation/
 - `datasets/rag-v1-seed.jsonl`
 - `baselines/mock-hash-1024-v1.json`
 - `baselines/mock-hash-1024-v1.md`
+- `baselines/text-embedding-v4-1024-v1.json`
+- `baselines/text-embedding-v4-1024-v1.md`
 
 运行前应把受控语料上传到目标知识库并等待文档状态变为 `READY`。然后在 `backend` 目录执行：
 

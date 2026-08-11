@@ -67,7 +67,6 @@ def get_knowledge_search_service(
     return KnowledgeSearchService(
         db=db,
         embedding_factory=EmbeddingProviderFactory(),
-        similarity_threshold=settings.rag.search_similarity_threshold,
         candidate_multiplier=settings.rag.search_candidate_multiplier,
     )
 

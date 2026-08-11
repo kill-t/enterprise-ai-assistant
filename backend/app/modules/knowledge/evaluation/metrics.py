@@ -10,6 +10,7 @@ from app.modules.knowledge.evaluation.models import (
     RagEvaluationObservation,
     RagEvaluationReport,
     RagExpectedBehavior,
+    RagRetrievedSourceEvaluation,
     RetrievedEvidence,
 )
 
@@ -137,6 +138,24 @@ class RagMetricsEvaluator:
         should_refuse = case.expected_behavior == RagExpectedBehavior.REFUSE
         refusal_correct = observation.refused == should_refuse
         citation_valid = self._is_citation_valid(observation)
+        source_results = tuple(
+            RagRetrievedSourceEvaluation(
+                rank=rank,
+                source_id=source.source_id,
+                filename=source.filename,
+                score=source.score,
+                relevant=any(
+                    self._matches(evidence, source)
+                    for evidence in case.expected_evidence
+                ),
+            )
+            for rank, source in enumerate(observation.retrieved_sources, start=1)
+        )
+        top_score = (
+            observation.retrieved_sources[0].score
+            if observation.retrieved_sources
+            else None
+        )
 
         if should_refuse:
             return RagCaseEvaluationResult(
@@ -146,6 +165,9 @@ class RagMetricsEvaluator:
                 matched_evidence_count=0,
                 expected_evidence_count=0,
                 latency_ms=observation.latency_ms,
+                retrieved_count=len(observation.retrieved_sources),
+                top_score=top_score,
+                retrieved_sources=source_results,
             )
 
         top_sources = observation.retrieved_sources[: self.top_k]
@@ -176,6 +198,9 @@ class RagMetricsEvaluator:
             matched_evidence_count=matched_count,
             expected_evidence_count=len(case.expected_evidence),
             latency_ms=observation.latency_ms,
+            retrieved_count=len(observation.retrieved_sources),
+            top_score=top_score,
+            retrieved_sources=source_results,
         )
 
     @staticmethod

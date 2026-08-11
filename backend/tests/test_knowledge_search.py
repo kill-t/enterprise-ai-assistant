@@ -143,6 +143,50 @@ def test_service_builds_query_vector_then_filters_threshold_and_top_k() -> None:
     assert response.embedding_model == knowledge_base.embedding_model
 
 
+def test_service_uses_provider_specific_threshold_without_explicit_override() -> None:
+    """真实 Embedding 知识库应使用独立阈值，不能沿用 Mock 的词面分数边界。"""
+    user_id = uuid4()
+    knowledge_base = build_knowledge_base(user_id=user_id)
+    knowledge_base.embedding_provider = "openai_compatible"
+    knowledge_base.embedding_model = "text-embedding-v4"
+    embedding_service = SimpleNamespace(
+        embed_texts=AsyncMock(
+            return_value=EmbeddingResult(
+                vectors=((1.0, 0.0),),
+                model=knowledge_base.embedding_model,
+                dimension=knowledge_base.embedding_dimension,
+            )
+        )
+    )
+    service = build_service(
+        knowledge_base=knowledge_base,
+        search_repository=SimpleNamespace(
+            has_incompatible_ready_chunks=AsyncMock(return_value=False),
+            search_candidates=AsyncMock(
+                return_value=[
+                    build_candidate(score=0.46, chunk_index=0),
+                    build_candidate(score=0.44, chunk_index=1),
+                ]
+            ),
+        ),
+        embedding_factory=SimpleNamespace(
+            create_service=Mock(return_value=embedding_service)
+        ),
+        similarity_threshold=None,
+    )
+
+    response = asyncio.run(
+        service.search(
+            user_id=user_id,
+            knowledge_base_id=knowledge_base.id,
+            request=KnowledgeSearchRequest(query="项目会议", top_k=2),
+        )
+    )
+
+    assert response.similarity_threshold == 0.45
+    assert [result.score for result in response.results] == [0.46]
+
+
 def test_service_hides_missing_or_cross_user_knowledge_base() -> None:
     """知识库不存在或属于其他用户时必须统一返回 404，且不能调用向量模型。"""
     embedding_factory = SimpleNamespace(create_service=Mock())
@@ -305,7 +349,7 @@ def build_service(
     knowledge_base: KnowledgeBaseEntity | None,
     search_repository=None,
     embedding_factory=None,
-    similarity_threshold: float = 0.2,
+    similarity_threshold: float | None = 0.2,
     candidate_multiplier: int = 4,
 ) -> KnowledgeSearchService:
     """构造不连接真实基础设施的检索 Service。"""

@@ -225,6 +225,10 @@ def test_embedding_factory_defaults_to_mock_profile() -> None:
 
 def test_embedding_settings_rejects_non_database_dimension() -> None:
     """第一版数据库列固定为 vector(1024)，运行配置不能悄悄改成其他维度。"""
+    # 环境变量始终以字符串进入配置层，合法的 "1024" 必须先转换为整数。
+    settings = EmbeddingSettings.model_validate({"dimension": "1024"})
+
+    assert settings.dimension == 1024
     with pytest.raises(ValueError):
         EmbeddingSettings(dimension=768)
 

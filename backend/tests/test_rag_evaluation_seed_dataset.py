@@ -13,6 +13,9 @@ DATASET_PATH = BACKEND_ROOT / "evaluation" / "datasets" / "rag-v1-seed.jsonl"
 BASELINE_PATH = (
     BACKEND_ROOT / "evaluation" / "baselines" / "mock-hash-1024-v1.json"
 )
+REAL_BASELINE_PATH = (
+    BACKEND_ROOT / "evaluation" / "baselines" / "text-embedding-v4-1024-v1.json"
+)
 
 
 def test_seed_dataset_matches_controlled_corpus() -> None:
@@ -74,3 +77,22 @@ def test_mock_baseline_matches_seed_dataset_and_records_search_config() -> None:
     assert [result.case_id for result in report.results] == [
         case.case_id for case in cases
     ]
+
+
+def test_real_embedding_baseline_is_sanitized_and_uses_calibrated_threshold() -> None:
+    """真实基线应覆盖同一数据集、记录 0.45 阈值且不提交本地 Chunk UUID。"""
+    cases = RagEvaluationDatasetLoader().load_jsonl(DATASET_PATH)
+    report = RagEvaluationReport.model_validate_json(
+        REAL_BASELINE_PATH.read_text(encoding="utf-8")
+    )
+
+    assert report.embedding_model == "text-embedding-v4"
+    assert report.similarity_threshold == 0.45
+    assert report.top_k == 3
+    assert report.total_cases == len(cases)
+    assert report.recall_at_k == 1.0
+    assert report.refusal_accuracy == 1.0
+    assert [result.case_id for result in report.results] == [
+        case.case_id for case in cases
+    ]
+    assert all(not result.retrieved_sources for result in report.results)
