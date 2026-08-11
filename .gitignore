@@ -17,6 +17,8 @@
 **/logs/
 **/celerybeat-schedule*
 **/uploads/
+# 本地评测报告可能包含企业资料片段，默认不进入 Git；正式基线需人工脱敏后单独保存。
+**/evaluation/reports/
 
 # Frontend
 **/node_modules/

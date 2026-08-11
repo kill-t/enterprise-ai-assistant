@@ -1,5 +1,6 @@
 """用纯函数式流程计算 RAG 检索、拒答和引用指标。"""
 
+import math
 from statistics import fmean
 
 from app.modules.knowledge.evaluation.models import (
@@ -56,6 +57,16 @@ class RagMetricsEvaluator:
         ]
         answer_cases = len(answer_results)
         refusal_cases = len(cases) - answer_cases
+        citation_results = [
+            result
+            for result in results
+            if result.citation_valid is not None
+        ]
+        latencies = sorted(
+            result.latency_ms
+            for result in results
+            if result.latency_ms is not None
+        )
 
         return RagEvaluationReport(
             top_k=self.top_k,
@@ -73,9 +84,13 @@ class RagMetricsEvaluator:
                 else None
             ),
             refusal_accuracy=fmean(result.refusal_correct for result in results),
-            citation_validity_rate=fmean(
-                result.citation_valid for result in results
+            citation_validity_rate=(
+                fmean(result.citation_valid for result in citation_results)
+                if citation_results
+                else None
             ),
+            average_latency_ms=fmean(latencies) if latencies else None,
+            p95_latency_ms=self._nearest_rank_percentile(latencies, 0.95),
             results=results,
         )
 
@@ -96,6 +111,7 @@ class RagMetricsEvaluator:
                 citation_valid=citation_valid,
                 matched_evidence_count=0,
                 expected_evidence_count=0,
+                latency_ms=observation.latency_ms,
             )
 
         top_sources = observation.retrieved_sources[: self.top_k]
@@ -125,6 +141,7 @@ class RagMetricsEvaluator:
             citation_valid=citation_valid,
             matched_evidence_count=matched_count,
             expected_evidence_count=len(case.expected_evidence),
+            latency_ms=observation.latency_ms,
         )
 
     @staticmethod
@@ -139,8 +156,10 @@ class RagMetricsEvaluator:
         )
 
     @staticmethod
-    def _is_citation_valid(observation: RagEvaluationObservation) -> bool:
-        """拒答不能携带引用；正常回答至少引用一个真实检索来源。"""
+    def _is_citation_valid(observation: RagEvaluationObservation) -> bool | None:
+        """只在回答层实际运行后判断引用；纯检索观测返回不适用。"""
+        if observation.cited_source_ids is None:
+            return None
         if observation.refused:
             return not observation.cited_source_ids
 
@@ -149,6 +168,17 @@ class RagMetricsEvaluator:
         }
         cited_ids = set(observation.cited_source_ids)
         return bool(cited_ids) and cited_ids.issubset(retrieved_ids)
+
+    @staticmethod
+    def _nearest_rank_percentile(
+        sorted_values: list[float],
+        percentile: float,
+    ) -> float | None:
+        """使用最近秩法计算百分位，少量样例时也能得到可解释的真实观测值。"""
+        if not sorted_values:
+            return None
+        rank = max(1, math.ceil(percentile * len(sorted_values)))
+        return sorted_values[rank - 1]
 
     @staticmethod
     def _index_unique_cases(

@@ -16,6 +16,14 @@ from app.modules.knowledge.evaluation.models import (
     RagExpectedBehavior,
     RetrievedEvidence,
 )
+from app.modules.knowledge.evaluation.report_writer import (
+    RagEvaluationArtifacts,
+    RagEvaluationReportWriter,
+)
+from app.modules.knowledge.evaluation.runner import (
+    RagEvaluationRunError,
+    RagRetrievalEvaluationRunner,
+)
 
 __all__ = [
     "ExpectedEvidence",
@@ -25,7 +33,11 @@ __all__ = [
     "RagEvaluationError",
     "RagEvaluationObservation",
     "RagEvaluationReport",
+    "RagEvaluationArtifacts",
+    "RagEvaluationReportWriter",
+    "RagEvaluationRunError",
     "RagExpectedBehavior",
     "RagMetricsEvaluator",
+    "RagRetrievalEvaluationRunner",
     "RetrievedEvidence",
 ]

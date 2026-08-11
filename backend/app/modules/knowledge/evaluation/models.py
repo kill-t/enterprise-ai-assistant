@@ -112,7 +112,9 @@ class RagEvaluationObservation(BaseModel):
     case_id: str = Field(min_length=1, max_length=120)
     retrieved_sources: tuple[RetrievedEvidence, ...] = Field(default_factory=tuple)
     refused: bool
-    cited_source_ids: tuple[str, ...] = Field(default_factory=tuple)
+    # None 表示本次只执行了检索，没有运行回答层；空元组表示回答层明确没有产生引用。
+    cited_source_ids: tuple[str, ...] | None = None
+    latency_ms: float | None = Field(default=None, ge=0.0)
 
     @field_validator("case_id", mode="before")
     @classmethod
@@ -126,6 +128,8 @@ class RagEvaluationObservation(BaseModel):
     @classmethod
     def normalize_citations(cls, value: object) -> object:
         """清理引用编号，保留重复值以便校验器明确报告数据错误。"""
+        if value is None:
+            return value
         if isinstance(value, (list, tuple)):
             return tuple(item.strip() if isinstance(item, str) else item for item in value)
         return value
@@ -136,7 +140,9 @@ class RagEvaluationObservation(BaseModel):
         source_ids = [source.source_id for source in self.retrieved_sources]
         if len(source_ids) != len(set(source_ids)):
             raise ValueError("一次评测观测不能包含重复的 source_id")
-        if len(self.cited_source_ids) != len(set(self.cited_source_ids)):
+        if self.cited_source_ids is not None and len(self.cited_source_ids) != len(
+            set(self.cited_source_ids)
+        ):
             raise ValueError("一次评测观测不能重复引用同一个 source_id")
         return self
 
@@ -148,9 +154,10 @@ class RagCaseEvaluationResult(BaseModel):
     recall_at_k: float | None = Field(default=None, ge=0.0, le=1.0)
     reciprocal_rank: float | None = Field(default=None, ge=0.0, le=1.0)
     refusal_correct: bool
-    citation_valid: bool
+    citation_valid: bool | None
     matched_evidence_count: int = Field(ge=0)
     expected_evidence_count: int = Field(ge=0)
+    latency_ms: float | None = Field(default=None, ge=0.0)
 
 
 class RagEvaluationReport(BaseModel):
@@ -163,5 +170,7 @@ class RagEvaluationReport(BaseModel):
     recall_at_k: float | None = Field(default=None, ge=0.0, le=1.0)
     mean_reciprocal_rank: float | None = Field(default=None, ge=0.0, le=1.0)
     refusal_accuracy: float = Field(ge=0.0, le=1.0)
-    citation_validity_rate: float = Field(ge=0.0, le=1.0)
+    citation_validity_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    average_latency_ms: float | None = Field(default=None, ge=0.0)
+    p95_latency_ms: float | None = Field(default=None, ge=0.0)
     results: tuple[RagCaseEvaluationResult, ...]
