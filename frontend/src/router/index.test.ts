@@ -6,6 +6,7 @@ import * as authApi from "@/api/auth";
 import { ApiError } from "@/api/client";
 import { createAppRouter } from "@/router";
 import { useAuthStore } from "@/stores/auth";
+import { useKnowledgeBaseStore } from "@/stores/knowledge-bases";
 
 vi.mock("@/api/auth", () => ({
   login: vi.fn(),
@@ -33,6 +34,20 @@ describe("认证路由守卫", () => {
   it("没有 Token 访问受保护页面时跳转登录并保留原地址", async () => {
     const pinia = createPinia();
     setActivePinia(pinia);
+    const knowledgeBaseStore = useKnowledgeBaseStore();
+    knowledgeBaseStore.knowledgeBases = [
+      {
+        id: "old-knowledge-base",
+        name: "上一位用户的资料",
+        description: null,
+        embedding_provider: "mock",
+        embedding_model: "mock-hash-1024",
+        embedding_dimension: 1024,
+        is_archived: false,
+        created_at: "2026-08-11T00:00:00Z",
+        updated_at: "2026-08-11T00:00:00Z",
+      },
+    ];
     const router = createAppRouter(pinia, createMemoryHistory());
 
     await router.push("/");
@@ -41,6 +56,7 @@ describe("认证路由守卫", () => {
     expect(router.currentRoute.value.name).toBe("login");
     expect(router.currentRoute.value.query.redirect).toBe("/");
     expect(authApi.getCurrentUser).not.toHaveBeenCalled();
+    expect(knowledgeBaseStore.knowledgeBases).toEqual([]);
   });
 
   it("未登录用户可以访问注册页", async () => {
@@ -106,6 +122,23 @@ describe("认证路由守卫", () => {
     expect(router.currentRoute.value.params.conversationId).toBe(
       "conversation-1",
     );
+  });
+
+  it("有效 Token 可以进入知识库管理路由", async () => {
+    sessionStorage.setItem(
+      "enterprise-ai-assistant.access-token",
+      "valid-token",
+    );
+    vi.mocked(authApi.getCurrentUser).mockResolvedValue(currentUser());
+    const pinia = createPinia();
+    setActivePinia(pinia);
+    const router = createAppRouter(pinia, createMemoryHistory());
+
+    await router.push("/knowledge-bases");
+    await router.isReady();
+
+    expect(router.currentRoute.value.name).toBe("knowledge-bases");
+    expect(router.currentRoute.value.meta.requiresAuth).toBe(true);
   });
 
   it("Token 返回 401 时清理会话并跳转登录", async () => {

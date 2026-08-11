@@ -52,6 +52,11 @@ async function mountHomeView() {
       { path: "/", name: "home", component: HomeView },
       { path: "/login", name: "login", component: { template: "<p>登录页</p>" } },
       {
+        path: "/knowledge-bases",
+        name: "knowledge-bases",
+        component: { template: "<p>知识库</p>" },
+      },
+      {
         path: "/conversations/:conversationId",
         name: "conversation-detail",
         component: { template: "<p>会话详情</p>" },
@@ -100,6 +105,9 @@ describe("HomeView", () => {
       wrapper.get('[data-test="conversation-list"] a').attributes("href"),
     ).toBe("/conversations/conversation-1");
     expect(wrapper.text()).toContain("demo@example.com");
+    expect(wrapper.get('[data-test="knowledge-bases-link"]').attributes("href")).toBe(
+      "/knowledge-bases",
+    );
   });
 
   it("没有会话时显示空态和可用的新建按钮", async () => {

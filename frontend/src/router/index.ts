@@ -7,8 +7,10 @@ import {
 } from "vue-router";
 
 import { useAuthStore } from "@/stores/auth";
+import { resetUserDataStores } from "@/stores/user-data";
 import ConversationDetailView from "@/views/ConversationDetailView.vue";
 import HomeView from "@/views/HomeView.vue";
+import KnowledgeBasesView from "@/views/KnowledgeBasesView.vue";
 import LoginView from "@/views/LoginView.vue";
 import RegisterView from "@/views/RegisterView.vue";
 
@@ -52,6 +54,12 @@ export function createAppRouter(
         meta: { requiresAuth: true },
       },
       {
+        path: "/knowledge-bases",
+        name: "knowledge-bases",
+        component: KnowledgeBasesView,
+        meta: { requiresAuth: true },
+      },
+      {
         path: "/:pathMatch(.*)*",
         redirect: "/",
       },
@@ -63,6 +71,7 @@ export function createAppRouter(
     await authStore.ensureSession();
 
     if (to.meta.requiresAuth && !authStore.isAuthenticated) {
+      resetUserDataStores(pinia);
       return {
         name: "login",
         query: { redirect: to.fullPath },

@@ -73,6 +73,11 @@ export const useKnowledgeBaseStore = defineStore("knowledge-bases", {
     },
   },
   actions: {
+    /** 页面已经消费全局错误后可主动清除，避免旧提示影响下一次独立操作。 */
+    clearError(): void {
+      this.errorMessage = null;
+    },
+
     /** Token 缺失时清除旧账号数据，并阻止受保护请求发出。 */
     resetForMissingToken(): void {
       this.$reset();

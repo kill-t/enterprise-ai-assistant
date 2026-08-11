@@ -5,6 +5,7 @@ import { useRouter } from "vue-router";
 import type { ConversationResponse } from "@/api/contracts";
 import { useAuthStore } from "@/stores/auth";
 import { useConversationStore } from "@/stores/conversations";
+import { resetUserDataStores } from "@/stores/user-data";
 
 const DEFAULT_CONVERSATION_TITLE = "新建会话";
 
@@ -138,7 +139,7 @@ async function confirmDelete(): Promise<void> {
 
 /** 清理所有当前用户内存状态并替换历史记录，避免后退回受保护页面。 */
 async function logout(): Promise<void> {
-  conversationStore.reset();
+  resetUserDataStores();
   authStore.logout();
   await router.replace({ name: "login" });
 }
@@ -176,15 +177,24 @@ onMounted(() => {
             会话保存你的问题、模型回复和后续可追溯的工作流。每个会话仅属于当前登录用户。
           </p>
         </div>
-        <button
-          class="primary-button create-conversation-button"
-          data-test="create-conversation"
-          type="button"
-          :disabled="conversationStore.isCreating"
-          @click="createNewConversation"
-        >
-          {{ conversationStore.isCreating ? "正在创建…" : "新建会话" }}
-        </button>
+        <div class="workspace-intro-actions">
+          <RouterLink
+            class="secondary-button knowledge-bases-link"
+            data-test="knowledge-bases-link"
+            :to="{ name: 'knowledge-bases' }"
+          >
+            管理知识库
+          </RouterLink>
+          <button
+            class="primary-button create-conversation-button"
+            data-test="create-conversation"
+            type="button"
+            :disabled="conversationStore.isCreating"
+            @click="createNewConversation"
+          >
+            {{ conversationStore.isCreating ? "正在创建…" : "新建会话" }}
+          </button>
+        </div>
       </section>
 
       <section class="conversation-panel" aria-labelledby="conversation-list-title">

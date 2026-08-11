@@ -6,10 +6,9 @@ import type { MessageResponse, MessageRole, MessageStatus } from "@/api/contract
 import MessageCitationList from "@/components/MessageCitationList.vue";
 import { useAuthStore } from "@/stores/auth";
 import { useConversationDetailStore } from "@/stores/conversation-detail";
-import { useConversationStore } from "@/stores/conversations";
+import { resetUserDataStores } from "@/stores/user-data";
 
 const authStore = useAuthStore();
-const conversationStore = useConversationStore();
 const detailStore = useConversationDetailStore();
 const route = useRoute();
 const router = useRouter();
@@ -72,10 +71,9 @@ async function submitMessage(): Promise<void> {
   await detailStore.sendMessage(content);
 }
 
-/** 退出时同时清除列表与详情，避免切换账号后留下任何会话内存数据。 */
+/** 退出时清除全部用户私有状态，避免切换账号后留下会话或知识库数据。 */
 async function logout(): Promise<void> {
-  detailStore.reset();
-  conversationStore.reset();
+  resetUserDataStores();
   authStore.logout();
   await router.replace({ name: "login" });
 }

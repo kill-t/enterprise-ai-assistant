@@ -343,6 +343,217 @@ textarea {
   padding: 0 22px;
 }
 
+.workspace-intro-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.knowledge-bases-link {
+  border-radius: 12px;
+  font-weight: 750;
+  text-decoration: none;
+}
+
+.knowledge-base-main {
+  width: min(1260px, calc(100% - 40px));
+}
+
+.knowledge-base-intro {
+  margin-top: 22px;
+}
+
+.knowledge-base-layout {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.72fr) minmax(0, 1.28fr);
+  gap: 22px;
+  align-items: start;
+  margin-top: 42px;
+}
+
+.knowledge-create-panel,
+.knowledge-list-panel {
+  padding: clamp(24px, 4vw, 36px);
+  border: 1px solid #dbe6e0;
+  border-radius: 24px;
+  background: rgb(255 255 255 / 90%);
+  box-shadow: 0 24px 70px rgb(30 73 60 / 9%);
+}
+
+.knowledge-create-panel h2,
+.knowledge-list-panel h2 {
+  margin: 0;
+  color: #17382f;
+  font-size: clamp(26px, 3vw, 34px);
+  letter-spacing: -0.03em;
+}
+
+.knowledge-panel-description {
+  margin: 12px 0 0;
+  color: #667a73;
+  line-height: 1.7;
+}
+
+.knowledge-create-form {
+  display: grid;
+  gap: 16px;
+  margin-top: 26px;
+}
+
+.knowledge-create-form label {
+  display: grid;
+  gap: 8px;
+  color: #315b4f;
+  font-size: 14px;
+  font-weight: 750;
+}
+
+.knowledge-create-form input,
+.knowledge-create-form textarea {
+  width: 100%;
+  border: 1px solid #ccdcd5;
+  border-radius: 12px;
+  color: #17382f;
+  background: #fbfdfc;
+  font: inherit;
+  line-height: 1.6;
+  outline: none;
+}
+
+.knowledge-create-form input {
+  height: 46px;
+  padding: 0 13px;
+}
+
+.knowledge-create-form textarea {
+  padding: 11px 13px;
+  resize: vertical;
+}
+
+.knowledge-create-form input:focus,
+.knowledge-create-form textarea:focus {
+  border-color: #5d9d86;
+  box-shadow: 0 0 0 3px rgb(93 157 134 / 14%);
+}
+
+.knowledge-create-form input:disabled,
+.knowledge-create-form textarea:disabled {
+  cursor: wait;
+  opacity: 0.65;
+}
+
+.knowledge-description-count {
+  margin: -10px 0 0;
+  color: #7a8c85;
+  font-size: 12px;
+  text-align: right;
+}
+
+.knowledge-create-success {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: 10px;
+  color: #24614e;
+  background: #e8f4ed;
+  font-size: 13px;
+}
+
+.create-knowledge-base-button {
+  width: 100%;
+  margin: 0;
+}
+
+.knowledge-empty-state {
+  margin-top: 26px;
+}
+
+.knowledge-base-list {
+  display: grid;
+  gap: 14px;
+  margin: 26px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.knowledge-base-card {
+  padding: 20px;
+  border: 1px solid #e0eae5;
+  border-radius: 17px;
+  background: #fcfefd;
+}
+
+.knowledge-base-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.knowledge-base-card-header > div {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.knowledge-base-card h3 {
+  margin: 0;
+  color: #244a3f;
+  font-size: 18px;
+}
+
+.knowledge-base-card time {
+  color: #7a8b85;
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.knowledge-active-badge {
+  padding: 3px 7px;
+  border-radius: 999px;
+  color: #216149;
+  background: #e4f3ea;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.knowledge-base-description {
+  margin: 13px 0 0;
+  color: #5d726a;
+  line-height: 1.7;
+  white-space: pre-wrap;
+}
+
+.knowledge-base-metadata {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin: 17px 0 0;
+}
+
+.knowledge-base-metadata > div {
+  min-width: 0;
+  padding: 9px 10px;
+  border-radius: 10px;
+  background: #f1f6f3;
+}
+
+.knowledge-base-metadata dt {
+  color: #789087;
+  font-size: 11px;
+}
+
+.knowledge-base-metadata dd {
+  overflow: hidden;
+  margin: 4px 0 0;
+  color: #365b50;
+  font-size: 12px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .conversation-panel {
   margin-top: 52px;
   padding: clamp(24px, 5vw, 42px);
@@ -1061,6 +1272,10 @@ textarea {
     min-height: 54vh;
   }
 
+  .knowledge-base-layout {
+    grid-template-columns: 1fr;
+  }
+
 }
 
 @media (max-width: 600px) {
@@ -1086,8 +1301,26 @@ textarea {
     flex-direction: column;
   }
 
+  .workspace-intro-actions {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .knowledge-bases-link {
+    text-align: center;
+  }
+
   .create-conversation-button {
     width: 100%;
+  }
+
+  .knowledge-base-card-header {
+    flex-direction: column;
+  }
+
+  .knowledge-base-metadata {
+    grid-template-columns: 1fr;
   }
 
   .conversation-panel-heading {

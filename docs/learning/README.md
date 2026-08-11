@@ -59,3 +59,4 @@
 53. [公开 SSE sources 协议与前端状态](53-public-sse-sources-and-frontend-state.md)
 54. [Vue RAG 引用卡片](54-vue-rag-citation-cards.md)
 55. [Vue 知识库 API 与状态层](55-vue-knowledge-base-api-and-store.md)
+56. [Vue 知识库列表与创建界面](56-vue-knowledge-base-list-and-create-ui.md)
