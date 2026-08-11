@@ -32,6 +32,25 @@ function message(status: "pending" | "completed") {
   };
 }
 
+/** 构造一条满足后端范围约束的实时知识来源。 */
+function source(overrides: Record<string, unknown> = {}) {
+  return {
+    knowledge_base_id: "00000000-0000-0000-0000-000000000010",
+    knowledge_base_name: "项目资料",
+    document_id: "00000000-0000-0000-0000-000000000011",
+    chunk_id: "00000000-0000-0000-0000-000000000012",
+    filename: "release-guide.pdf",
+    chunk_index: 0,
+    content: "发布前必须完成安全评审。",
+    heading_path: "项目 > 发布",
+    page_start: 2,
+    page_end: 2,
+    source_order: 1,
+    score: 0.93,
+    ...overrides,
+  };
+}
+
 /** 把消息流完整收集为数组，便于断言事件顺序。 */
 async function collectMessageEvents(
   stream: ReturnType<typeof streamConversationMessage>,
@@ -57,6 +76,11 @@ describe("streamConversationMessage", () => {
         user_message: { ...pending, role: "user", status: "completed" },
         assistant_message: pending,
       })}\n\n`,
+      `event: sources\ndata: ${JSON.stringify({
+        type: "sources",
+        message_id: pending.id,
+        sources: [source()],
+      })}\n\n`,
       `event: delta\ndata: ${JSON.stringify({
         type: "delta",
         message_id: pending.id,
@@ -80,6 +104,7 @@ describe("streamConversationMessage", () => {
 
     expect(events.map((event) => event.type)).toEqual([
       "started",
+      "sources",
       "delta",
       "completed",
     ]);
@@ -176,6 +201,112 @@ describe("streamConversationMessage", () => {
 
     await expect(consume).rejects.toMatchObject({
       code: "EVENT_TYPE_MISMATCH",
+    });
+  });
+
+  it("来源分数或页码越界时拒绝 sources 帧", async () => {
+    const pending = message("pending");
+    const body = [
+      `event: started\ndata: ${JSON.stringify({
+        type: "started",
+        user_message: { ...pending, role: "user", status: "completed" },
+        assistant_message: pending,
+      })}\n\n`,
+      `event: sources\ndata: ${JSON.stringify({
+        type: "sources",
+        message_id: pending.id,
+        sources: [source({ score: 1.5, page_start: 0 })],
+      })}\n\n`,
+    ].join("");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(createStreamResponse(body)),
+    );
+
+    const consume = collectMessageEvents(
+      streamConversationMessage({
+        conversationId: "conversation-1",
+        content: "测试非法来源",
+        token: "access-token",
+      }),
+    );
+
+    await expect(consume).rejects.toMatchObject({
+      code: "INVALID_MESSAGE_EVENT",
+    });
+  });
+
+  it("sources 的消息 ID 与 started 助手不同时拒绝该流", async () => {
+    const pending = message("pending");
+    const body = [
+      `event: started\ndata: ${JSON.stringify({
+        type: "started",
+        user_message: { ...pending, role: "user", status: "completed" },
+        assistant_message: pending,
+      })}\n\n`,
+      `event: sources\ndata: ${JSON.stringify({
+        type: "sources",
+        message_id: "00000000-0000-0000-0000-000000000099",
+        sources: [source()],
+      })}\n\n`,
+    ].join("");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(createStreamResponse(body)),
+    );
+
+    const consume = collectMessageEvents(
+      streamConversationMessage({
+        conversationId: "conversation-1",
+        content: "测试错误归属",
+        token: "access-token",
+      }),
+    );
+
+    await expect(consume).rejects.toMatchObject({
+      code: "UNEXPECTED_MESSAGE_ID",
+    });
+  });
+
+  it("第一个 delta 之后才出现 sources 时拒绝事件乱序", async () => {
+    const pending = message("pending");
+    const completed = message("completed");
+    const body = [
+      `event: started\ndata: ${JSON.stringify({
+        type: "started",
+        user_message: { ...pending, role: "user", status: "completed" },
+        assistant_message: pending,
+      })}\n\n`,
+      `event: delta\ndata: ${JSON.stringify({
+        type: "delta",
+        message_id: pending.id,
+        delta: "先到正文",
+      })}\n\n`,
+      `event: sources\ndata: ${JSON.stringify({
+        type: "sources",
+        message_id: pending.id,
+        sources: [source()],
+      })}\n\n`,
+      `event: completed\ndata: ${JSON.stringify({
+        type: "completed",
+        message: completed,
+      })}\n\n`,
+    ].join("");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(createStreamResponse(body)),
+    );
+
+    const consume = collectMessageEvents(
+      streamConversationMessage({
+        conversationId: "conversation-1",
+        content: "测试乱序来源",
+        token: "access-token",
+      }),
+    );
+
+    await expect(consume).rejects.toMatchObject({
+      code: "INVALID_EVENT_ORDER",
     });
   });
 });

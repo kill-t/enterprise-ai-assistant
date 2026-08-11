@@ -74,14 +74,23 @@ function appendMessageIfMissing(
     : [...messages, message];
 }
 
-/** 根据消息 ID 使用后端终态或本地终态替换数组中的现有消息。 */
+/** 根据消息 ID 替换终态；完成事件可保留此前实时收到的来源。 */
 function replaceMessage(
   messages: MessageResponse[],
   replacement: MessageResponse,
+  preserveExistingCitations = false,
 ): MessageResponse[] {
-  return messages.map((item) =>
-    item.id === replacement.id ? replacement : item,
-  );
+  return messages.map((item) => {
+    if (item.id !== replacement.id) {
+      return item;
+    }
+    const citations =
+      replacement.citations ??
+      (preserveExistingCitations ? item.citations : undefined);
+    return citations === undefined
+      ? replacement
+      : { ...replacement, citations };
+  });
 }
 
 /** 管理当前打开会话的元数据和已持久化消息，避免不同会话响应相互覆盖。 */
@@ -235,8 +244,29 @@ export const useConversationDetailStore = defineStore("conversation-detail", {
                   : message,
               );
               break;
+            case "sources": {
+              const sourceTarget = this.messages.find(
+                (message) => message.id === event.message_id,
+              );
+              if (
+                activeStream.assistantMessageId !== event.message_id ||
+                sourceTarget?.role !== "assistant"
+              ) {
+                throw new Error("sources 不属于当前正在生成的助手消息");
+              }
+              this.messages = this.messages.map((message) =>
+                message.id === event.message_id
+                  ? { ...message, citations: event.sources }
+                  : message,
+              );
+              break;
+            }
             case "completed":
-              this.messages = replaceMessage(this.messages, event.message);
+              this.messages = replaceMessage(
+                this.messages,
+                event.message,
+                true,
+              );
               break;
             case "error":
               this.messages = replaceMessage(this.messages, event.message);

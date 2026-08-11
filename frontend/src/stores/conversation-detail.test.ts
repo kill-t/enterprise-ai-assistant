@@ -7,6 +7,7 @@ import { ApiError } from "@/api/client";
 import type {
   ConversationResponse,
   MessageResponse,
+  MessageStreamSource,
   MessageStreamEvent,
 } from "@/api/contracts";
 import { useAuthStore } from "@/stores/auth";
@@ -66,6 +67,23 @@ const completedAssistantMessage: MessageResponse = {
   status: "completed",
   finished_at: "2026-08-08T00:01:02Z",
 };
+
+const messageSources: MessageStreamSource[] = [
+  {
+    knowledge_base_id: "00000000-0000-0000-0000-000000000010",
+    knowledge_base_name: "项目资料",
+    document_id: "00000000-0000-0000-0000-000000000011",
+    chunk_id: "00000000-0000-0000-0000-000000000012",
+    filename: "release-guide.pdf",
+    chunk_index: 0,
+    content: "发布前必须完成安全评审。",
+    heading_path: "项目 > 发布",
+    page_start: 2,
+    page_end: 2,
+    source_order: 1,
+    score: 0.93,
+  },
+];
 
 /** 用数组模拟一次完整、可预测的内部 SSE 业务事件流。 */
 async function* eventStream(
@@ -209,7 +227,7 @@ describe("useConversationDetailStore", () => {
     expect(store.errorMessage).toBe("登录状态已失效，请重新登录");
   });
 
-  it("把 started、delta 和 completed 事件转换为最终消息列表", async () => {
+  it("把 started、sources、delta 和 completed 合并为带来源的最终消息", async () => {
     setAuthenticatedToken();
     vi.mocked(streamApi.streamConversationMessage).mockReturnValue(
       eventStream([
@@ -217,6 +235,11 @@ describe("useConversationDetailStore", () => {
           type: "started",
           user_message: { ...firstMessage, content: "整理会议资料" },
           assistant_message: pendingAssistantMessage,
+        },
+        {
+          type: "sources",
+          message_id: pendingAssistantMessage.id,
+          sources: messageSources,
         },
         {
           type: "delta",
@@ -246,7 +269,7 @@ describe("useConversationDetailStore", () => {
     );
     expect(store.messages).toEqual([
       { ...firstMessage, content: "整理会议资料" },
-      completedAssistantMessage,
+      { ...completedAssistantMessage, citations: messageSources },
     ]);
     expect(store.isSending).toBe(false);
     expect(store.sendErrorMessage).toBeNull();

@@ -2,8 +2,6 @@ from collections.abc import AsyncIterator
 
 from app.modules.conversation.schema.message_schema import (
     MessageStreamEvent,
-    MessageStreamInternalEvent,
-    MessageStreamSourcesEvent,
 )
 
 
@@ -14,7 +12,7 @@ def encode_sse_event(event: MessageStreamEvent) -> str:
 
 
 async def close_message_stream(
-    stream: AsyncIterator[MessageStreamInternalEvent],
+    stream: AsyncIterator[MessageStreamEvent],
 ) -> None:
     """在迭代器支持 aclose 时主动关闭，释放 Provider 和网络流资源。"""
     close = getattr(stream, "aclose", None)
@@ -24,15 +22,12 @@ async def close_message_stream(
 
 async def iter_sse_frames(
     first_event: MessageStreamEvent,
-    remaining_events: AsyncIterator[MessageStreamInternalEvent],
+    remaining_events: AsyncIterator[MessageStreamEvent],
 ) -> AsyncIterator[str]:
     """先发送已预取事件，再顺序编码剩余事件，并保证最终关闭业务流。"""
     try:
         yield encode_sse_event(first_event)
         async for event in remaining_events:
-            # sources 目前只是 Service 内部契约，下一模块更新前端解析器后再公开。
-            if isinstance(event, MessageStreamSourcesEvent):
-                continue
             yield encode_sse_event(event)
     finally:
         # 正常结束、编码异常和客户端断开都会经过这里。

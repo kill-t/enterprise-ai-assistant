@@ -63,7 +63,7 @@ from app.modules.conversation.schema.message_schema import (
     MessageStreamCompletedEvent,
     MessageStreamDeltaEvent,
     MessageStreamErrorEvent,
-    MessageStreamInternalEvent,
+    MessageStreamEvent,
     MessageStreamSource,
     MessageStreamSourcesEvent,
     MessageStreamStartedEvent,
@@ -257,7 +257,7 @@ class ConversationService:
         user_id: UUID,
         conversation_id: UUID,
         content: str,
-    ) -> AsyncIterator[MessageStreamInternalEvent]:
+    ) -> AsyncIterator[MessageStreamEvent]:
         """把 Provider 流转换成带消息状态和事务语义的 Service 内部流。"""
         context = await self._prepare_message_generation(
             user_id=user_id,

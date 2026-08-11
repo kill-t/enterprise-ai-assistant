@@ -181,8 +181,8 @@ def test_stream_route_returns_ordered_sse_and_forwards_identity() -> None:
     assert service.closed is True
 
 
-def test_http_sse_temporarily_filters_internal_sources_event() -> None:
-    """内部 sources 契约完成前，HTTP 层不得提前向旧前端发送未知事件。"""
+def test_http_sse_exposes_sources_between_started_and_delta() -> None:
+    """公共 HTTP SSE 应按 started、sources、delta、completed 顺序发送来源。"""
     events = build_success_events()
     assistant_message = events[0].assistant_message
     events.insert(
@@ -214,10 +214,16 @@ def test_http_sse_temporarily_filters_internal_sources_event() -> None:
     assert response.status_code == 200
     assert [event_name for event_name, _ in frames] == [
         "started",
+        "sources",
         "delta",
         "delta",
         "completed",
     ]
+    assert frames[1][1] == {
+        "type": "sources",
+        "message_id": str(assistant_message.id),
+        "sources": [],
+    }
     assert service.closed is True
 
 

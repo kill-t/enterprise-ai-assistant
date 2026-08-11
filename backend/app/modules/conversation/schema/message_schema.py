@@ -144,16 +144,6 @@ class MessageStreamErrorEvent(BaseModel):
 # 后续 SSE 层只负责序列化该联合类型，不再解释 Provider 厂商事件。
 MessageStreamEvent: TypeAlias = Annotated[
     MessageStreamStartedEvent
-    | MessageStreamDeltaEvent
-    | MessageStreamCompletedEvent
-    | MessageStreamErrorEvent,
-    Field(discriminator="type"),
-]
-
-
-# Service 内部先支持 sources；HTTP 层将在下一模块完成公开协议升级。
-MessageStreamInternalEvent: TypeAlias = Annotated[
-    MessageStreamStartedEvent
     | MessageStreamSourcesEvent
     | MessageStreamDeltaEvent
     | MessageStreamCompletedEvent

@@ -3,6 +3,7 @@ import type {
   ConversationCreateInput,
   ConversationResponse,
   ConversationUpdateInput,
+  MessageHistoryResponse,
   MessageResponse,
 } from "@/api/contracts";
 
@@ -48,7 +49,7 @@ export async function listConversationMessages(
   token: string,
   conversationId: string,
 ): Promise<MessageResponse[]> {
-  return requestJson<MessageResponse[]>(
+  return requestJson<MessageHistoryResponse[]>(
     `${conversationPath(conversationId)}/messages`,
     {
       method: "GET",

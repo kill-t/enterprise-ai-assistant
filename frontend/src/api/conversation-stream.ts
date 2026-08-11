@@ -4,6 +4,7 @@ import type {
   MessageRole,
   MessageStatus,
   MessageStreamEvent,
+  MessageStreamSource,
 } from "@/api/contracts";
 import {
   parseSseStream,
@@ -23,6 +24,8 @@ const MESSAGE_STATUSES = new Set<MessageStatus>([
   "failed",
   "cancelled",
 ]);
+const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 export interface StreamConversationMessageInput {
   conversationId: string;
@@ -34,6 +37,54 @@ export interface StreamConversationMessageInput {
 /** 判断未知 JSON 是否为普通对象，避免直接访问 null 或数组字段。 */
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+/** 检查后端资源和消息身份是否为标准 UUID 字符串。 */
+function isUuid(value: unknown): value is string {
+  return typeof value === "string" && UUID_PATTERN.test(value);
+}
+
+/** 页码允许缺失；存在时必须是从 1 开始的整数。 */
+function isNullablePositiveInteger(value: unknown): value is number | null {
+  return value === null || (Number.isInteger(value) && Number(value) > 0);
+}
+
+/** 严格校验单条实时来源，避免越界分数和错误页码进入状态层。 */
+function isMessageStreamSource(
+  value: unknown,
+  expectedOrder: number,
+): value is MessageStreamSource {
+  if (!isRecord(value)) {
+    return false;
+  }
+  if (
+    !isUuid(value.knowledge_base_id) ||
+    !isUuid(value.document_id) ||
+    !isUuid(value.chunk_id) ||
+    typeof value.knowledge_base_name !== "string" ||
+    value.knowledge_base_name.trim().length === 0 ||
+    typeof value.filename !== "string" ||
+    value.filename.trim().length === 0 ||
+    !Number.isInteger(value.chunk_index) ||
+    Number(value.chunk_index) < 0 ||
+    typeof value.content !== "string" ||
+    value.content.trim().length === 0 ||
+    (value.heading_path !== null && typeof value.heading_path !== "string") ||
+    !isNullablePositiveInteger(value.page_start) ||
+    !isNullablePositiveInteger(value.page_end) ||
+    value.source_order !== expectedOrder ||
+    typeof value.score !== "number" ||
+    !Number.isFinite(value.score) ||
+    value.score < -1 ||
+    value.score > 1
+  ) {
+    return false;
+  }
+  return !(
+    value.page_start !== null &&
+    value.page_end !== null &&
+    value.page_end < value.page_start
+  );
 }
 
 /** 对照后端 MessageResponse 检查运行时字段，防止错误数据进入 Pinia。 */
@@ -85,6 +136,17 @@ function decodeMessageEvent(frame: ParsedSseEvent): MessageStreamEvent {
         return data as unknown as MessageStreamEvent;
       }
       break;
+    case "sources":
+      if (
+        isUuid(data.message_id) &&
+        Array.isArray(data.sources) &&
+        data.sources.every((source, index) =>
+          isMessageStreamSource(source, index + 1),
+        )
+      ) {
+        return data as unknown as MessageStreamEvent;
+      }
+      break;
     case "completed":
     case "error":
       if (isMessageResponse(data.message)) {
@@ -119,7 +181,7 @@ function requireSseBody(response: Response): ReadableStream<Uint8Array> {
   return response.body;
 }
 
-/** 发送消息并按 started、delta、completed/error 顺序产生类型安全事件。 */
+/** 发送消息并按 started、可选 sources、delta、completed/error 产生类型安全事件。 */
 export async function* streamConversationMessage(
   input: StreamConversationMessageInput,
 ): AsyncGenerator<MessageStreamEvent> {
@@ -136,6 +198,9 @@ export async function* streamConversationMessage(
 
   let started = false;
   let terminal = false;
+  let assistantMessageId: string | null = null;
+  let sourcesReceived = false;
+  let deltaReceived = false;
   for await (const frame of parseSseStream(requireSseBody(response))) {
     const event = decodeMessageEvent(frame);
     if (!started && event.type !== "started") {
@@ -160,7 +225,36 @@ export async function* streamConversationMessage(
       );
     }
 
-    started ||= event.type === "started";
+    if (event.type === "started") {
+      started = true;
+      assistantMessageId = event.assistant_message.id;
+    } else {
+      const eventMessageId =
+        event.type === "sources" || event.type === "delta"
+          ? event.message_id
+          : event.message.id;
+      if (eventMessageId !== assistantMessageId) {
+        throw new SseProtocolError(
+          "UNEXPECTED_MESSAGE_ID",
+          "SSE 事件不属于 started 创建的助手消息",
+          event,
+        );
+      }
+      if (event.type === "sources") {
+        if (sourcesReceived || deltaReceived) {
+          throw new SseProtocolError(
+            "INVALID_EVENT_ORDER",
+            "sources 必须在第一个 delta 前且最多出现一次",
+            event,
+          );
+        }
+        sourcesReceived = true;
+      }
+      if (event.type === "delta") {
+        deltaReceived = true;
+      }
+    }
+
     terminal ||= event.type === "completed" || event.type === "error";
     yield event;
   }

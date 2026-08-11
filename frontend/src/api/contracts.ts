@@ -2,6 +2,28 @@ export type MessageRole = "system" | "user" | "assistant" | "tool";
 
 export type MessageStatus = "pending" | "completed" | "failed" | "cancelled";
 
+/** 历史引用与实时 sources 共用的前端展示字段。 */
+export interface MessageSource {
+  knowledge_base_id: string | null;
+  knowledge_base_name: string;
+  document_id: string | null;
+  chunk_id: string | null;
+  filename: string;
+  chunk_index: number;
+  content: string;
+  heading_path: string | null;
+  page_start: number | null;
+  page_end: number | null;
+  source_order: number;
+  score: number;
+}
+
+/** 历史接口在公共来源字段外补充持久化引用身份和创建时间。 */
+export interface MessageCitationResponse extends MessageSource {
+  id: string;
+  created_at: string;
+}
+
 /** 对应 FastAPI MessageResponse，日期在 HTTP 中使用 ISO 字符串。 */
 export interface MessageResponse {
   id: string;
@@ -13,6 +35,12 @@ export interface MessageResponse {
   error_message: string | null;
   created_at: string;
   finished_at: string | null;
+  citations?: MessageSource[];
+}
+
+/** 历史 GET 接口保证每条消息都带引用数组，普通消息为空数组。 */
+export interface MessageHistoryResponse extends MessageResponse {
+  citations: MessageCitationResponse[];
 }
 
 export interface MessageStreamStartedEvent {
@@ -27,6 +55,19 @@ export interface MessageStreamDeltaEvent {
   delta: string;
 }
 
+/** 实时来源的三个活外键在生成时一定存在，历史删除后才可能变为 null。 */
+export interface MessageStreamSource extends MessageSource {
+  knowledge_base_id: string;
+  document_id: string;
+  chunk_id: string;
+}
+
+export interface MessageStreamSourcesEvent {
+  type: "sources";
+  message_id: string;
+  sources: MessageStreamSource[];
+}
+
 export interface MessageStreamCompletedEvent {
   type: "completed";
   message: MessageResponse;
@@ -39,6 +80,7 @@ export interface MessageStreamErrorEvent {
 
 export type MessageStreamEvent =
   | MessageStreamStartedEvent
+  | MessageStreamSourcesEvent
   | MessageStreamDeltaEvent
   | MessageStreamCompletedEvent
   | MessageStreamErrorEvent;

@@ -161,7 +161,7 @@ async def send_message(
     response_class=StreamingResponse,
     responses={
         200: {
-            "description": "按 started、delta、completed 或 error 顺序返回消息流",
+            "description": "按 started、可选 sources、delta、completed 或 error 顺序返回消息流",
             "content": {
                 "text/event-stream": {
                     "schema": {"type": "string"},
