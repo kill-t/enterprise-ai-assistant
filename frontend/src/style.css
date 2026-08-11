@@ -821,6 +821,101 @@ textarea {
   white-space: pre-wrap;
 }
 
+.citation-list {
+  margin-top: 18px;
+  padding-top: 16px;
+  border-top: 1px solid #dce8e2;
+}
+
+.citation-list h3 {
+  margin: 0;
+  color: #315b4f;
+  font-size: 14px;
+}
+
+.citation-items {
+  display: grid;
+  gap: 10px;
+  margin: 10px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.citation-item {
+  padding: 12px 13px;
+  border: 1px solid #dce8e2;
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.citation-heading {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+  color: #28483f;
+  font-size: 13px;
+}
+
+.citation-order {
+  color: #147153;
+  font-weight: 800;
+}
+
+.citation-snapshot {
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #785b2b;
+  background: #fff5d9;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.citation-meta,
+.citation-path {
+  display: flex;
+  gap: 6px;
+  margin: 7px 0 0;
+  color: #6d817a;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.citation-path {
+  color: #4b6b61;
+}
+
+.citation-snippet {
+  margin: 9px 0 0;
+  padding: 9px 10px;
+  border-left: 3px solid #9ec7b7;
+  color: #486159;
+  background: #f5f9f7;
+  font-size: 12px;
+  line-height: 1.65;
+  white-space: pre-wrap;
+}
+
+.citation-toggle {
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  color: #216b54;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.citation-toggle:hover {
+  text-decoration: underline;
+}
+
+.citation-toggle:focus-visible {
+  outline: 2px solid #4b9b7f;
+  outline-offset: 3px;
+}
+
 .message-error {
   margin: 12px 0 0;
   padding-top: 12px;

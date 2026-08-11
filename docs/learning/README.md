@@ -57,3 +57,4 @@
 51. [历史消息引用读取协议](51-history-message-citation-protocol.md)
 52. [流式 RAG 与内部 sources 事件](52-streaming-rag-internal-sources-event.md)
 53. [公开 SSE sources 协议与前端状态](53-public-sse-sources-and-frontend-state.md)
+54. [Vue RAG 引用卡片](54-vue-rag-citation-cards.md)

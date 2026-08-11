@@ -3,6 +3,7 @@ import { ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import type { MessageResponse, MessageRole, MessageStatus } from "@/api/contracts";
+import MessageCitationList from "@/components/MessageCitationList.vue";
 import { useAuthStore } from "@/stores/auth";
 import { useConversationDetailStore } from "@/stores/conversation-detail";
 import { useConversationStore } from "@/stores/conversations";
@@ -178,6 +179,10 @@ watch(
                   </div>
                 </header>
                 <p class="message-content">{{ message.content || "模型未产生正文" }}</p>
+                <MessageCitationList
+                  v-if="message.role === 'assistant' && message.citations?.length"
+                  :sources="message.citations"
+                />
                 <p v-if="message.error_message" class="message-error">{{ message.error_message }}</p>
                 <p v-if="detailStore.retryErrorMessages[message.id]" class="message-error">
                   {{ detailStore.retryErrorMessages[message.id] }}

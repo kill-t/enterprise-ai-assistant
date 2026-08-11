@@ -8,6 +8,7 @@ import * as streamApi from "@/api/conversation-stream";
 import type {
   ConversationResponse,
   MessageResponse,
+  MessageSource,
   MessageStreamEvent,
 } from "@/api/contracts";
 import { useAuthStore } from "@/stores/auth";
@@ -134,6 +135,36 @@ describe("ConversationDetailView", () => {
     expect(wrapper.get('[data-test="message-list"]').text()).toContain(
       "好的，我会先整理会议背景和待办事项。",
     );
+  });
+
+  it("在助手历史消息正文下展示持久化引用", async () => {
+    const source: MessageSource = {
+      knowledge_base_id: "knowledge-base-1",
+      knowledge_base_name: "项目资料库",
+      document_id: "document-1",
+      chunk_id: "chunk-1",
+      filename: "项目计划.pdf",
+      chunk_index: 0,
+      content: "项目第一阶段需要完成需求确认。",
+      heading_path: "实施计划 / 第一阶段",
+      page_start: 2,
+      page_end: 2,
+      source_order: 1,
+      score: 0.9,
+    };
+    vi.mocked(conversationsApi.getConversation).mockResolvedValue(conversation);
+    vi.mocked(conversationsApi.listConversationMessages).mockResolvedValue([
+      messages[0],
+      { ...messages[1], citations: [source] },
+    ]);
+
+    const { wrapper } = await mountConversationDetailView();
+    await flushPromises();
+
+    const citationList = wrapper.get('[data-test="citation-list"]');
+    expect(citationList.text()).toContain("参考来源（1）");
+    expect(citationList.text()).toContain("项目计划.pdf");
+    expect(citationList.text()).toContain("第 2 页");
   });
 
   it("历史为空时显示空态，而不是把它当作加载失败", async () => {
