@@ -1,0 +1,167 @@
+"""定义可持久化评测样例、单次观测和最终报告的数据契约。"""
+
+from enum import Enum
+
+from pydantic import BaseModel, Field, field_validator, model_validator
+
+
+class RagExpectedBehavior(str, Enum):
+    """描述资料是否足以支持回答，用于区分回答题和拒答题。"""
+
+    ANSWER = "answer"
+    REFUSE = "refuse"
+
+
+class ExpectedEvidence(BaseModel):
+    """用文件名和稳定原文片段描述一条标准证据。"""
+
+    filename: str = Field(min_length=1, max_length=255)
+    content_contains: str = Field(min_length=1, max_length=2000)
+
+    @field_validator("filename", "content_contains", mode="before")
+    @classmethod
+    def normalize_text(cls, value: object) -> object:
+        """在长度校验前清理空格，避免纯空白证据进入评测集。"""
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @property
+    def identity(self) -> tuple[str, str]:
+        """返回大小写不敏感的逻辑身份，用于识别重复标准证据。"""
+        return (self.filename.casefold(), self.content_contains.casefold())
+
+
+class RagEvaluationCase(BaseModel):
+    """保存一个可重复执行的问题及其预期行为和标准证据。"""
+
+    case_id: str = Field(min_length=1, max_length=120, pattern=r"^[a-zA-Z0-9_-]+$")
+    question: str = Field(min_length=1, max_length=4000)
+    expected_behavior: RagExpectedBehavior
+    expected_evidence: tuple[ExpectedEvidence, ...] = Field(default_factory=tuple)
+    tags: tuple[str, ...] = Field(default_factory=tuple)
+
+    @field_validator("case_id", "question", mode="before")
+    @classmethod
+    def normalize_text(cls, value: object) -> object:
+        """统一清理样例标识与问题两端空格。"""
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("tags", mode="before")
+    @classmethod
+    def normalize_tags(cls, value: object) -> object:
+        """清理标签、移除空标签并保持首次出现顺序。"""
+        if not isinstance(value, (list, tuple)):
+            return value
+
+        normalized: list[str] = []
+        seen: set[str] = set()
+        for item in value:
+            if not isinstance(item, str):
+                normalized.append(item)
+                continue
+            tag = item.strip()
+            key = tag.casefold()
+            if tag and key not in seen:
+                normalized.append(tag)
+                seen.add(key)
+        return tuple(normalized)
+
+    @model_validator(mode="after")
+    def validate_behavior_and_evidence(self) -> "RagEvaluationCase":
+        """保证回答题有证据、拒答题无证据，并拒绝重复标准证据。"""
+        if (
+            self.expected_behavior == RagExpectedBehavior.ANSWER
+            and not self.expected_evidence
+        ):
+            raise ValueError("可回答样例必须至少提供一条标准证据")
+        if (
+            self.expected_behavior == RagExpectedBehavior.REFUSE
+            and self.expected_evidence
+        ):
+            raise ValueError("拒答样例不能配置标准证据")
+
+        identities = [evidence.identity for evidence in self.expected_evidence]
+        if len(identities) != len(set(identities)):
+            raise ValueError("同一评测样例不能包含重复的标准证据")
+        return self
+
+
+class RetrievedEvidence(BaseModel):
+    """保存一次检索返回给回答层的有序来源快照。"""
+
+    source_id: str = Field(min_length=1, max_length=120)
+    filename: str = Field(min_length=1, max_length=255)
+    content: str = Field(min_length=1)
+    score: float | None = Field(default=None, ge=-1.0, le=1.0)
+
+    @field_validator("source_id", "filename", "content", mode="before")
+    @classmethod
+    def normalize_text(cls, value: object) -> object:
+        """清理来源字段，防止空来源被误判为有效引用。"""
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+
+class RagEvaluationObservation(BaseModel):
+    """记录某个样例的一次真实运行结果，供纯指标层消费。"""
+
+    case_id: str = Field(min_length=1, max_length=120)
+    retrieved_sources: tuple[RetrievedEvidence, ...] = Field(default_factory=tuple)
+    refused: bool
+    cited_source_ids: tuple[str, ...] = Field(default_factory=tuple)
+
+    @field_validator("case_id", mode="before")
+    @classmethod
+    def normalize_case_id(cls, value: object) -> object:
+        """清理关联标识，保证它能与评测样例稳定匹配。"""
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("cited_source_ids", mode="before")
+    @classmethod
+    def normalize_citations(cls, value: object) -> object:
+        """清理引用编号，保留重复值以便校验器明确报告数据错误。"""
+        if isinstance(value, (list, tuple)):
+            return tuple(item.strip() if isinstance(item, str) else item for item in value)
+        return value
+
+    @model_validator(mode="after")
+    def validate_source_identifiers(self) -> "RagEvaluationObservation":
+        """来源和引用编号必须唯一，避免一个编号指向多条证据。"""
+        source_ids = [source.source_id for source in self.retrieved_sources]
+        if len(source_ids) != len(set(source_ids)):
+            raise ValueError("一次评测观测不能包含重复的 source_id")
+        if len(self.cited_source_ids) != len(set(self.cited_source_ids)):
+            raise ValueError("一次评测观测不能重复引用同一个 source_id")
+        return self
+
+
+class RagCaseEvaluationResult(BaseModel):
+    """保存单个问题的指标明细，方便定位整体分数下降的原因。"""
+
+    case_id: str
+    recall_at_k: float | None = Field(default=None, ge=0.0, le=1.0)
+    reciprocal_rank: float | None = Field(default=None, ge=0.0, le=1.0)
+    refusal_correct: bool
+    citation_valid: bool
+    matched_evidence_count: int = Field(ge=0)
+    expected_evidence_count: int = Field(ge=0)
+
+
+class RagEvaluationReport(BaseModel):
+    """汇总整批评测的核心指标与逐题明细。"""
+
+    top_k: int = Field(ge=1, le=20)
+    total_cases: int = Field(gt=0)
+    answer_cases: int = Field(ge=0)
+    refusal_cases: int = Field(ge=0)
+    recall_at_k: float | None = Field(default=None, ge=0.0, le=1.0)
+    mean_reciprocal_rank: float | None = Field(default=None, ge=0.0, le=1.0)
+    refusal_accuracy: float = Field(ge=0.0, le=1.0)
+    citation_validity_rate: float = Field(ge=0.0, le=1.0)
+    results: tuple[RagCaseEvaluationResult, ...]
