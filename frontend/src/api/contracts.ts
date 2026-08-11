@@ -133,6 +133,34 @@ export interface ConversationUpdateInput {
   is_archived?: boolean;
 }
 
+/** 对应知识库公开响应；Embedding 字段是创建时冻结的配置快照。 */
+export interface KnowledgeBaseResponse {
+  id: string;
+  name: string;
+  description: string | null;
+  embedding_provider: string;
+  embedding_model: string;
+  embedding_dimension: number;
+  is_archived: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+/** 创建知识库只允许设置业务名称和可选描述，Embedding 配置由后端统一决定。 */
+export interface KnowledgeBaseCreateInput {
+  name: string;
+  description?: string | null;
+}
+
+/**
+ * 更新时保留 description 的 null 语义：省略表示不修改，null 表示清空已有描述。
+ */
+export interface KnowledgeBaseUpdateInput {
+  name?: string;
+  description?: string | null;
+  is_archived?: boolean;
+}
+
 /** FastAPI 业务异常处理器返回的统一错误结构。 */
 export interface ApiErrorPayload {
   code?: string;
