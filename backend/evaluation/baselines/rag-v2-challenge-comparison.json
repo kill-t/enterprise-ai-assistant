@@ -39,11 +39,28 @@
         "近似干扰": {"recall_at_3": 0.27777777777777773, "behavior_accuracy": 0.42857142857142855},
         "困难拒答": {"refusal_accuracy": 0.1}
       }
+    },
+    {
+      "provider": "pg_trgm",
+      "model": "word_similarity",
+      "similarity_threshold": 0.1,
+      "recall_at_3": 0.44,
+      "mean_reciprocal_rank": 0.37333333333333335,
+      "behavior_accuracy": 0.5142857142857142,
+      "refusal_accuracy": 0.2,
+      "average_latency_ms": 10.202182855989252,
+      "p95_latency_ms": 18.90389999607578,
+      "scenario_metrics": {
+        "同义改写": {"recall_at_3": 0.5714285714285714, "behavior_accuracy": 0.7857142857142857},
+        "多文档": {"recall_at_3": 0.0, "behavior_accuracy": 0.2},
+        "近似干扰": {"recall_at_3": 0.0, "behavior_accuracy": 0.14285714285714285},
+        "困难拒答": {"refusal_accuracy": 0.2}
+      }
     }
   ],
   "decision": {
-    "next_strategy": "two_stage_retrieval",
-    "reason": "真实向量明显改善语义召回，但相似度不能判断证据是否足以回答，单一阈值无法同时保证召回与困难拒答。",
+    "next_strategy": "hybrid_rrf_then_evidence_selector",
+    "reason": "真实向量负责语义召回，pg_trgm 以很低延迟补充原词和术语候选；先通过 RRF 融合两路名次，再由 EvidenceSelector 判断答案充分性，不能把任何一路相似度当作拒答结论。",
     "deferred": ["MQE", "HyDE", "knowledge_graph"]
   }
 }

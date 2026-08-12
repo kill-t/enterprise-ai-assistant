@@ -60,6 +60,13 @@ class DocumentChunkEntity(Base):
             postgresql_using="hnsw",
             postgresql_ops={"embedding": "vector_cosine_ops"},
         ),
+        # GiST 支持按 trigram 距离执行 Top-K，作为中文关键词检索的低成本基线。
+        Index(
+            "ix_document_chunks_content_gist_trgm",
+            "content",
+            postgresql_using="gist",
+            postgresql_ops={"content": "gist_trgm_ops"},
+        ),
     )
 
     id: Mapped[UUID] = mapped_column(
