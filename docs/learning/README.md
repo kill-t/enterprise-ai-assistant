@@ -77,3 +77,4 @@
 71. [LLM 证据充分性选择器契约](71-llm-evidence-selector-contract.md)
 72. [DeepSeek V4 Flash 证据选择真实评测](72-deepseek-flash-evidence-selector-evaluation.md)
 73. [LLM 证据选择器的可配置灰度接入](73-configurable-llm-selector-rollout.md)
+74. [LLM 证据选择器真实灰度联调](74-llm-selector-real-gray-smoke.md)
