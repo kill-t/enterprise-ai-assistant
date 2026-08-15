@@ -5,17 +5,24 @@ from typing import Self
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from app.infrastructure.llm.provider_factory import ProviderFactory
+
 
 class ConversationCreate(BaseModel):
     """创建会话时允许客户端提交的配置。"""
 
     title: str = Field(min_length=1, max_length=255)
     system_prompt: str | None = None
-    model_name: str = "gpt-5"
+    # 前端可以显式选择模型；未选择时必须跟随当前 Provider，不能保存过期的硬编码模型名。
+    model_name: str = Field(
+        default_factory=ProviderFactory.get_model_name,
+        min_length=1,
+        max_length=100,
+    )
     temperature: float = Field(default=0.7, ge=0, le=2)
 
 
-# 模型名称将在多 Provider 网关稳定后改为受支持模型枚举。
+# 后续 Tool/Agent 引入多 Provider 注册表后，再由注册表校验客户端显式提交的模型名。
 
 
 class ConversationUpdate(BaseModel):

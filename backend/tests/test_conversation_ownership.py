@@ -9,6 +9,7 @@ from pydantic import ValidationError
 
 from app.common.exception.business_exception import BusinessException
 from app.common.exception.error_code import ErrorCode
+from app.infrastructure.llm.provider_factory import ProviderFactory
 from app.main import create_app
 from app.modules.conversation.api.conversation_router import create_conversation
 from app.modules.conversation.entity.conversation import ConversationEntity
@@ -28,6 +29,13 @@ def test_conversation_user_id_has_database_foreign_key() -> None:
     foreign_keys = ConversationEntity.__table__.c.user_id.foreign_keys
 
     assert any(key.target_fullname == "users.id" for key in foreign_keys)
+
+
+def test_conversation_create_uses_current_provider_model_by_default() -> None:
+    """客户端省略模型名时，应跟随当前 Provider，而不是保存过期的硬编码模型。"""
+    request = ConversationCreate(title="项目会议")
+
+    assert request.model_name == ProviderFactory.get_model_name()
 
 
 def test_repository_owned_lookup_filters_conversation_and_user() -> None:
