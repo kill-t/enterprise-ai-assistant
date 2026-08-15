@@ -61,6 +61,7 @@ class DeepSeekProvider(BaseChatProvider):
                 "prompt_tokens=%s "
                 "completion_tokens=%s "
                 "total_tokens=%s "
+                "finish_reason=%s "
                 "latency=%.3fs"
             ),
             self.PROVIDER_NAME,
@@ -68,6 +69,7 @@ class DeepSeekProvider(BaseChatProvider):
             response.usage.prompt_tokens,
             response.usage.completion_tokens,
             response.usage.total_tokens,
+            response.choices[0].finish_reason,
             elapsed,
         )
 
@@ -77,6 +79,8 @@ class DeepSeekProvider(BaseChatProvider):
             prompt_tokens=response.usage.prompt_tokens,
             completion_tokens=response.usage.completion_tokens,
             total_tokens=response.usage.total_tokens,
+            # length 表示厂商因为输出上限终止，Service 必须据此拒绝保存“伪完整”答案。
+            finish_reason=response.choices[0].finish_reason or "stop",
         )
 
     async def stream_chat(
@@ -152,7 +156,7 @@ class DeepSeekProvider(BaseChatProvider):
         llm_logger.info(
             (
                 "DeepSeek 模型流式调用完成 provider=%s model=%s "
-                "prompt_tokens=%s completion_tokens=%s total_tokens=%s "
+                "prompt_tokens=%s completion_tokens=%s total_tokens=%s finish_reason=%s "
                 "latency=%.3fs"
             ),
             self.PROVIDER_NAME,
@@ -160,6 +164,7 @@ class DeepSeekProvider(BaseChatProvider):
             response.prompt_tokens,
             response.completion_tokens,
             response.total_tokens,
+            response.finish_reason,
             time.perf_counter() - start,
         )
         yield ChatStreamCompletedEvent(response=response)

@@ -396,11 +396,12 @@ def test_deepseek_provider_enables_json_output_for_structured_request() -> None:
                 completion_tokens=20,
                 total_tokens=30,
             ),
-            choices=[
-                SimpleNamespace(
-                    message=SimpleNamespace(content='{"result": "ok"}')
-                )
-            ],
+                choices=[
+                    SimpleNamespace(
+                        message=SimpleNamespace(content='{"result": "ok"}'),
+                        finish_reason="stop",
+                    )
+                ],
         )
     )
     provider = object.__new__(DeepSeekProvider)
@@ -429,7 +430,12 @@ def test_deepseek_provider_uses_request_model_and_can_disable_thinking() -> None
                 completion_tokens=2,
                 total_tokens=12,
             ),
-            choices=[SimpleNamespace(message=SimpleNamespace(content='{"ok": true}'))],
+            choices=[
+                SimpleNamespace(
+                    message=SimpleNamespace(content='{"ok": true}'),
+                    finish_reason="stop",
+                )
+            ],
         )
     )
     provider = object.__new__(DeepSeekProvider)

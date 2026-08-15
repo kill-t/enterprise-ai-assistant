@@ -516,6 +516,40 @@ def test_stream_rejects_completed_content_that_differs_from_deltas() -> None:
     assert failed.message.content == "用户已经看到的正文"
 
 
+def test_stream_marks_length_limited_response_as_retryable_failure() -> None:
+    """模型达到输出上限时必须保留半截正文和用量，但绝不能标记为成功。"""
+    provider = ScriptedStreamProvider(
+        [
+            ChatStreamDeltaEvent(delta="只生成了一半"),
+            ChatStreamCompletedEvent(
+                response=ChatResponse(
+                    content="只生成了一半",
+                    model="deepseek-v4-flash",
+                    prompt_tokens=100,
+                    completion_tokens=1024,
+                    total_tokens=1124,
+                    finish_reason="length",
+                )
+            ),
+        ]
+    )
+    service, conversation_id, repository, summary_jobs, events = build_service(provider)
+
+    stream_events = asyncio.run(collect_stream(service, conversation_id))
+    failed = stream_events[-1]
+
+    assert isinstance(failed, MessageStreamErrorEvent)
+    assert failed.message.status == MessageStatus.FAILED
+    assert failed.message.content == "只生成了一半"
+    assert failed.message.model_name == "deepseek-v4-flash"
+    persisted_message = repository.entities[failed.message.id]
+    assert persisted_message.completion_tokens == 1024
+    assert failed.message.error_code == ErrorCode.MODEL_OUTPUT_TRUNCATED.value
+    assert failed.message.error_message == "模型回答达到长度上限，请重试"
+    assert "memory:assistant" not in events
+    summary_jobs.maybe_schedule.assert_not_awaited()
+
+
 def test_stream_maps_unexpected_provider_timeout_to_failed_event() -> None:
     """即使 Provider 直接抛异常，Service 也必须保存失败状态并结束事件流。"""
     provider = ScriptedStreamProvider([TimeoutError("模型连接超时")])

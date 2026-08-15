@@ -375,6 +375,20 @@ class ConversationService:
                 )
                 return
 
+            if terminal_event.response.finish_reason == "length":
+                # 厂商正常结束 HTTP 流不等于业务回答完整；保留部分正文和用量供审计、重试。
+                self._apply_response_metadata(
+                    assistant_message,
+                    terminal_event.response,
+                )
+                error = self._model_output_truncated_error()
+                yield await self._fail_stream_message(
+                    assistant_message=assistant_message,
+                    partial_content=partial_content,
+                    error=error,
+                )
+                return
+
             completed_message = await self._complete_assistant_response(
                 conversation=context.conversation,
                 conversation_id=conversation_id,
@@ -700,6 +714,19 @@ class ConversationService:
             assistant_response = await self.provider.chat(request)
         except Exception as exc:
             await self._mark_assistant_failed(assistant_message, exc)
+
+        if assistant_response.finish_reason == "length":
+            # 非流式重试也可能被截断，必须保留部分正文和用量，但不能进入成功缓存与摘要。
+            self._apply_response_metadata(assistant_message, assistant_response)
+            error = self._model_output_truncated_error()
+            await self._persist_assistant_failure(assistant_message, error)
+            app_logger.warning(
+                "模型回答达到长度上限 conversation_id=%s message_id=%s completion_tokens=%s",
+                conversation_id,
+                assistant_message.id,
+                assistant_response.completion_tokens,
+            )
+            raise error
         return await self._complete_assistant_response(
             conversation=conversation,
             conversation_id=conversation_id,
@@ -717,11 +744,7 @@ class ConversationService:
         sources: tuple[MultiKnowledgeSearchHit, ...] = (),
     ) -> MessageResponse:
         """原子保存完整助手响应和引用，再回填缓存并尽力调度摘要。"""
-        assistant_message.content = assistant_response.content
-        assistant_message.model_name = assistant_response.model
-        assistant_message.prompt_tokens = assistant_response.prompt_tokens
-        assistant_message.completion_tokens = assistant_response.completion_tokens
-        assistant_message.total_tokens = assistant_response.total_tokens
+        self._apply_response_metadata(assistant_message, assistant_response)
         assistant_message.status = MessageStatus.COMPLETED
         assistant_message.error_code = None
         assistant_message.error_message = None
@@ -749,6 +772,27 @@ class ConversationService:
             len(sources),
         )
         return MessageResponse.model_validate(assistant_message)
+
+    @staticmethod
+    def _apply_response_metadata(
+        assistant_message: MessageEntity,
+        assistant_response: ChatResponse,
+    ) -> None:
+        """把厂商响应的正文、模型和用量复制到消息，供成功与截断终态共同使用。"""
+        assistant_message.content = assistant_response.content
+        assistant_message.model_name = assistant_response.model
+        assistant_message.prompt_tokens = assistant_response.prompt_tokens
+        assistant_message.completion_tokens = assistant_response.completion_tokens
+        assistant_message.total_tokens = assistant_response.total_tokens
+
+    @staticmethod
+    def _model_output_truncated_error() -> BusinessException:
+        """构造稳定的长度上限错误，让前端可展示并允许用户原位重试。"""
+        return BusinessException(
+            code=ErrorCode.MODEL_OUTPUT_TRUNCATED,
+            message="模型回答达到长度上限，请重试",
+            status_code=502,
+        )
 
     async def _compensate_completion_failure(
         self,

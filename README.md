@@ -63,6 +63,18 @@ RAG__LLM_EVIDENCE_SELECTOR_MODEL=deepseek-v4-flash
 RAG__LLM_EVIDENCE_SELECTOR_THINKING_ENABLED=false
 ```
 
+如果还要让最终聊天回答使用真实 DeepSeek，并为较长的 RAG 列表回答预留足够空间，可配置：
+
+```text
+DEFAULT_PROVIDER=deepseek
+DEEPSEEK__MODEL=deepseek-v4-flash
+DEEPSEEK__MAX_OUTPUT_TOKENS=4096
+DEEPSEEK__THINKING_ENABLED=false
+```
+
+普通 RAG 回答默认关闭思考模式，避免不可见的推理内容提前耗尽正文输出预算。即使厂商因为
+长度上限返回 `finish_reason=length`，系统也会把消息标记为可重试失败，而不是保存成完整答案。
+
 修改后需要重启后端。知识库搜索接口和会话 RAG 会同时切换；模型故障会返回明确的服务不可用，
 不会自动退回阈值并伪装成正常答案。若要停止真实调用，应把配置改回 `threshold` 后重启。
 

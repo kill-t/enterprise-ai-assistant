@@ -79,3 +79,4 @@
 73. [LLM 证据选择器的可配置灰度接入](73-configurable-llm-selector-rollout.md)
 74. [LLM 证据选择器真实灰度联调](74-llm-selector-real-gray-smoke.md)
 75. [LLM 调用审计与独立事务](75-llm-run-audit-and-independent-transaction.md)
+76. [DeepSeek 输出截断、思考预算与失败恢复](76-deepseek-output-truncation-and-recovery.md)

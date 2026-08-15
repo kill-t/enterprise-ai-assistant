@@ -18,7 +18,10 @@ class ProviderFactory:
             return MockProvider()
 
         if provider == "deepseek":
-            return DeepSeekProvider()
+            # 普通聊天必须显式传递思考开关，避免厂商默认值悄悄吞掉正文输出预算。
+            return DeepSeekProvider(
+                thinking_enabled=settings.deepseek.thinking_enabled
+            )
 
         if provider == "openai":
             return OpenAIProvider()

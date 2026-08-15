@@ -327,7 +327,7 @@ export const useConversationDetailStore = defineStore("conversation-detail", {
       activeStream.controller.abort();
     },
 
-    /** 原位重试失败或取消的助手消息；请求失败时恢复重试前快照。 */
+    /** 原位重试失败或取消的助手消息；请求失败时优先恢复数据库保存的最新终态。 */
     async retryMessage(messageId: string): Promise<void> {
       const token = useAuthStore().token;
       const conversationId = this.conversationId;
@@ -370,12 +370,35 @@ export const useConversationDetailStore = defineStore("conversation-detail", {
           this.messages = replaceMessage(this.messages, retriedMessage);
         }
       } catch (error) {
+        const retryErrorMessage = getRetryErrorMessage(error);
+        let refreshedMessage: MessageResponse | undefined;
+        try {
+          // 502 也可能表示模型已返回半截正文；重新读取才能展示后端刚保存的真实失败状态。
+          const latestMessages = await listConversationMessages(
+            token,
+            conversationId,
+          );
+          refreshedMessage = latestMessages.find(
+            (message) => message.id === messageId,
+          );
+          if (this.conversationId === conversationId && refreshedMessage) {
+            this.messages = latestMessages;
+          }
+        } catch {
+          // 网络完全不可用时无法恢复数据库状态，下面退回点击前快照并展示请求错误。
+        }
+
         if (this.conversationId === conversationId) {
-          this.messages = replaceMessage(this.messages, originalMessage);
-          this.retryErrorMessages = {
-            ...this.retryErrorMessages,
-            [messageId]: getRetryErrorMessage(error),
-          };
+          if (!refreshedMessage) {
+            this.messages = replaceMessage(this.messages, originalMessage);
+          }
+          // 数据库消息已经携带同一错误时不重复展示第二条操作错误。
+          if (refreshedMessage?.error_message !== retryErrorMessage) {
+            this.retryErrorMessages = {
+              ...this.retryErrorMessages,
+              [messageId]: retryErrorMessage,
+            };
+          }
         }
       } finally {
         this.retryingMessageIds = this.retryingMessageIds.filter(

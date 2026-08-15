@@ -3,11 +3,14 @@ import inspect
 from collections.abc import AsyncIterator
 from types import SimpleNamespace
 from unittest.mock import AsyncMock
+from unittest.mock import Mock
 
 import pytest
 from pydantic import ValidationError
 
 from app.infrastructure.llm.base import BaseChatProvider
+from app.infrastructure.llm import provider_factory as provider_factory_module
+from app.infrastructure.llm.provider_factory import ProviderFactory
 from app.infrastructure.llm.providers.deepseek_provider import DeepSeekProvider
 from app.infrastructure.llm.providers.mock_provider import MockProvider
 from app.infrastructure.llm.schemas import (
@@ -158,6 +161,55 @@ def test_deepseek_stream_adapts_sdk_chunks_usage_and_finish_reason() -> None:
     request_options = create.await_args.kwargs
     assert request_options["stream"] is True
     assert request_options["stream_options"] == {"include_usage": True}
+
+
+def test_deepseek_chat_preserves_finish_reason_and_disables_thinking() -> None:
+    """非流式响应也必须保留 length，并把关闭思考配置真实传给厂商接口。"""
+    sdk_response = SimpleNamespace(
+        model="deepseek-v4-flash",
+        choices=[
+            SimpleNamespace(
+                message=SimpleNamespace(content="只生成了一半"),
+                finish_reason="length",
+            )
+        ],
+        usage=SimpleNamespace(
+            prompt_tokens=20,
+            completion_tokens=64,
+            total_tokens=84,
+        ),
+    )
+    provider = object.__new__(DeepSeekProvider)
+    provider.thinking_enabled = False
+    create = AsyncMock(return_value=sdk_response)
+    provider.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+
+    response = asyncio.run(provider.chat(build_request()))
+
+    assert response.finish_reason == "length"
+    assert response.content == "只生成了一半"
+    assert create.await_args.kwargs["extra_body"] == {
+        "thinking": {"type": "disabled"}
+    }
+
+
+def test_provider_factory_applies_default_deepseek_thinking_configuration(
+    monkeypatch,
+) -> None:
+    """普通聊天 Provider 必须显式采用配置值，不能把思考模式留给厂商默认决定。"""
+    provider = object()
+    deepseek_factory = Mock(return_value=provider)
+    monkeypatch.setattr(provider_factory_module, "DeepSeekProvider", deepseek_factory)
+    monkeypatch.setattr(provider_factory_module.settings, "default_provider", "deepseek")
+
+    result = ProviderFactory.create()
+
+    assert result is provider
+    deepseek_factory.assert_called_once_with(
+        thinking_enabled=provider_factory_module.settings.deepseek.thinking_enabled
+    )
 
 
 def test_deepseek_stream_converts_sdk_exception_to_safe_error() -> None:

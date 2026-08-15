@@ -422,4 +422,48 @@ describe("useConversationDetailStore", () => {
     );
     expect(store.isRetryingMessage(failedAssistantMessage.id)).toBe(false);
   });
+
+  it("重试被模型长度上限截断时重新读取数据库失败终态", async () => {
+    setAuthenticatedToken();
+    const failedAssistantMessage: MessageResponse = {
+      ...pendingAssistantMessage,
+      content: "上次回复中断的片段",
+      status: "failed",
+      error_code: "MODEL_TIMEOUT",
+      error_message: "模型响应超时，请稍后重试",
+      finished_at: "2026-08-08T00:01:03Z",
+    };
+    const truncatedMessage: MessageResponse = {
+      ...failedAssistantMessage,
+      content: "本次生成到输出上限的部分正文",
+      model_name: "deepseek-v4-flash",
+      error_code: "MODEL_OUTPUT_TRUNCATED",
+      error_message: "模型回答达到长度上限，请重试",
+      finished_at: "2026-08-08T00:01:08Z",
+    };
+    vi.mocked(conversationsApi.retryConversationMessage).mockRejectedValue(
+      new ApiError("模型回答达到长度上限，请重试", {
+        status: 502,
+        code: "MODEL_OUTPUT_TRUNCATED",
+      }),
+    );
+    vi.mocked(conversationsApi.listConversationMessages).mockResolvedValue([
+      firstMessage,
+      truncatedMessage,
+    ]);
+    const store = useConversationDetailStore();
+    store.conversationId = "conversation-1";
+    store.hasLoaded = true;
+    store.messages = [firstMessage, failedAssistantMessage];
+
+    await store.retryMessage(failedAssistantMessage.id);
+
+    expect(conversationsApi.listConversationMessages).toHaveBeenCalledWith(
+      "access-token",
+      "conversation-1",
+    );
+    expect(store.messages.at(-1)).toEqual(truncatedMessage);
+    expect(store.retryErrorMessages[failedAssistantMessage.id]).toBeUndefined();
+    expect(store.isRetryingMessage(failedAssistantMessage.id)).toBe(false);
+  });
 });

@@ -64,6 +64,21 @@ class SuccessfulProvider:
         )
 
 
+class TruncatedProvider:
+    """返回厂商正常响应但以 length 结束，用来复现答案被截断的场景。"""
+
+    async def chat(self, request):
+        """返回带部分正文和完整用量的截断结果。"""
+        return ChatResponse(
+            content="只生成了一半",
+            model="deepseek-v4-flash",
+            prompt_tokens=100,
+            completion_tokens=4096,
+            total_tokens=4196,
+            finish_reason="length",
+        )
+
+
 def build_retry_service(
     conversation_id,
     assistant_message: MessageEntity,
@@ -319,6 +334,52 @@ def test_retry_failure_marks_the_same_message_as_failed_again() -> None:
     assert failed_message.status == MessageStatus.FAILED
     assert failed_message.error_code == ErrorCode.MODEL_TIMEOUT.value
     assert failed_message.content == ""
+    assert memory_manager.saved_messages == []
+    service.summary_job_service.maybe_schedule.assert_not_awaited()
+
+
+def test_retry_marks_length_limited_response_as_failure_with_partial_content() -> None:
+    """非流式重试达到输出上限时应原位失败，并保留半截正文与模型用量。"""
+    conversation_id = uuid4()
+    failed_message = MessageEntity(
+        id=uuid4(),
+        conversation_id=conversation_id,
+        role=MessageRole.ASSISTANT,
+        content="旧失败内容",
+        model_name="mock",
+        status=MessageStatus.FAILED,
+        error_code=ErrorCode.MODEL_REQUEST_FAILED.value,
+        error_message="模型服务调用失败，请稍后重试",
+        created_at=datetime.now(timezone.utc),
+        finished_at=datetime.now(timezone.utc),
+    )
+    service, _, memory_manager = build_retry_service(
+        conversation_id,
+        failed_message,
+        TruncatedProvider(),
+    )
+
+    async def scenario() -> BusinessException:
+        """捕获长度上限业务错误，便于检查同一消息的最终状态。"""
+        try:
+            await service.retry_failed_message(
+                user_id=uuid4(),
+                conversation_id=conversation_id,
+                message_id=failed_message.id,
+            )
+        except BusinessException as exc:
+            return exc
+        raise AssertionError("达到长度上限的响应不能标记为成功")
+
+    error = asyncio.run(scenario())
+
+    assert error.code == ErrorCode.MODEL_OUTPUT_TRUNCATED
+    assert error.status_code == 502
+    assert failed_message.status == MessageStatus.FAILED
+    assert failed_message.content == "只生成了一半"
+    assert failed_message.model_name == "deepseek-v4-flash"
+    assert failed_message.completion_tokens == 4096
+    assert failed_message.error_message == "模型回答达到长度上限，请重试"
     assert memory_manager.saved_messages == []
     service.summary_job_service.maybe_schedule.assert_not_awaited()
 

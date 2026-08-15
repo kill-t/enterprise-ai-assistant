@@ -143,6 +143,12 @@ class ProviderSettings(ModelContextSettings):
     model: str
 
 
+class DeepSeekSettings(ProviderSettings):
+    """DeepSeek 专属配置；普通问答默认关闭会消耗输出预算的思考模式。"""
+
+    thinking_enabled: bool = False
+
+
 class AuthSettings(BaseModel):
     """JWT 签名算法、密钥和 Access Token 有效期配置。"""
 
@@ -238,7 +244,7 @@ class Settings(BaseSettings):
     conversation_memory: ConversationMemorySettings = ConversationMemorySettings()
 
     default_provider: str = "deepseek"
-    deepseek: ProviderSettings
+    deepseek: DeepSeekSettings
     openai: ProviderSettings
 
 
