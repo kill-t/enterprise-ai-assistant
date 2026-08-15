@@ -7,7 +7,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.common.exception.business_exception import BusinessException
 from app.common.exception.error_code import ErrorCode
 from app.core.loggers import app_logger
-from app.infrastructure.embedding.provider_factory import EmbeddingProviderFactory
 from app.modules.conversation.repository.conversation_knowledge_base_repository import (
     ConversationKnowledgeBaseRepository,
 )
@@ -22,6 +21,9 @@ from app.modules.knowledge.schema.knowledge_search_schema import (
 )
 from app.modules.knowledge.service.knowledge_search_service import (
     KnowledgeSearchService,
+)
+from app.modules.knowledge.service.knowledge_search_factory import (
+    create_knowledge_search_service,
 )
 
 
@@ -38,10 +40,7 @@ class ConversationKnowledgeSearchService:
         self.binding_repository = ConversationKnowledgeBaseRepository(db)
         self.knowledge_search_service = (
             knowledge_search_service
-            or KnowledgeSearchService(
-                db=db,
-                embedding_factory=EmbeddingProviderFactory(),
-            )
+            or create_knowledge_search_service(db=db)
         )
 
     async def search(

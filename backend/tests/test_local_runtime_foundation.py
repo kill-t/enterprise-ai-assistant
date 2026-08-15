@@ -1,4 +1,5 @@
 import asyncio
+from types import SimpleNamespace
 
 import pytest
 from fastapi import FastAPI
@@ -6,7 +7,7 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 
 import app.main as main_module
-from app.core.config import AuthSettings
+from app.core.config import AuthSettings, RagSettings
 from app.infrastructure.task_queue.asyncio_runner import run_async
 from app.local_server import get_event_loop_factory
 from app.main import create_app
@@ -73,6 +74,37 @@ def test_lifespan_validates_jwt_secret_before_accepting_requests(
         with pytest.raises(RuntimeError, match="AUTH__SECRET_KEY"):
             async with main_module.lifespan(FastAPI()):
                 raise AssertionError("配置错误时不应进入应用运行阶段")
+
+    asyncio.run(scenario())
+
+
+def test_lifespan_validates_llm_selector_key_before_accepting_requests(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """启用 LLM Selector 但缺少密钥时，服务必须在启动阶段明确失败。"""
+    monkeypatch.setattr(
+        main_module.settings,
+        "auth",
+        AuthSettings(
+            secret_key=SecretStr("test-secret-key-at-least-32-bytes-long")
+        ),
+    )
+    monkeypatch.setattr(
+        main_module.settings,
+        "rag",
+        RagSettings(evidence_selector="llm"),
+    )
+    monkeypatch.setattr(
+        main_module.settings,
+        "deepseek",
+        SimpleNamespace(api_key=""),
+    )
+
+    async def scenario() -> None:
+        """进入生命周期前应先执行 RAG 远程 Provider 配置校验。"""
+        with pytest.raises(RuntimeError, match="DEEPSEEK__API_KEY"):
+            async with main_module.lifespan(FastAPI()):
+                raise AssertionError("RAG 配置错误时不应进入应用运行阶段")
 
     asyncio.run(scenario())
 

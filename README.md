@@ -46,11 +46,25 @@ AUTH__SECRET_KEY=生成的随机值
 ```text
 DEFAULT_PROVIDER=mock
 EMBEDDING__PROVIDER=mock
+RAG__EVIDENCE_SELECTOR=threshold
 ```
 
 聊天 Mock 仍会走真实数据库、Redis、SSE 和前端状态链路；Embedding Mock 会生成稳定的
 1024 维词项哈希向量。两者都不调用外部模型。词项哈希只适合本地测试，不等于真实语义
 检索。真实模型需要在本机 `.env` 填写对应密钥并切换 Provider；任何密钥都不能提交到 Git。
+
+RAG 第二阶段默认使用不产生远程费用的向量阈值。需要启用已经通过困难集评测的
+DeepSeek V4 Flash 证据选择时，在本机 `.env` 配置：
+
+```text
+DEEPSEEK__API_KEY=你的真实密钥
+RAG__EVIDENCE_SELECTOR=llm
+RAG__LLM_EVIDENCE_SELECTOR_MODEL=deepseek-v4-flash
+RAG__LLM_EVIDENCE_SELECTOR_THINKING_ENABLED=false
+```
+
+修改后需要重启后端。知识库搜索接口和会话 RAG 会同时切换；模型故障会返回明确的服务不可用，
+不会自动退回阈值并伪装成正常答案。若要停止真实调用，应把配置改回 `threshold` 后重启。
 
 ### 2. 启动基础设施并迁移数据库
 

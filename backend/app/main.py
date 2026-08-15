@@ -19,6 +19,7 @@ async def lifespan(app: FastAPI):
 
     # 配置缺失应在服务刚启动时失败，不能拖延到用户第一次点击登录。
     settings.auth.validate_runtime()
+    settings.rag.validate_runtime(deepseek_api_key=settings.deepseek.api_key)
     logger.info("Enterprise AI Assistant 正在启动")
 
     try:

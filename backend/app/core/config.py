@@ -66,6 +66,21 @@ class RagSettings(BaseModel):
         le=1.0,
     )
     search_candidate_multiplier: int = Field(default=4, ge=1, le=20)
+    # 默认继续使用无远程费用的阈值方案；只有显式切换才组装 LLM Selector。
+    evidence_selector: Literal["threshold", "llm"] = "threshold"
+    llm_evidence_selector_model: str = "deepseek-v4-flash"
+    llm_evidence_selector_timeout_seconds: float = Field(default=30.0, gt=0)
+    llm_evidence_selector_thinking_enabled: bool = False
+    llm_evidence_selector_max_output_retries: int = Field(default=1, ge=0, le=3)
+
+    @field_validator("llm_evidence_selector_model")
+    @classmethod
+    def normalize_selector_model(cls, value: str) -> str:
+        """清理并拒绝空模型名，避免启用灰度后把错误拖到第一次请求。"""
+        normalized = value.strip()
+        if not normalized:
+            raise ValueError("LLM 证据选择模型名不能为空")
+        return normalized
 
     def similarity_threshold_for(self, provider: str) -> float:
         """根据知识库冻结的 Provider 返回经过独立评测的可靠性阈值。"""
@@ -74,6 +89,16 @@ class RagSettings(BaseModel):
         if provider == "openai_compatible":
             return self.openai_compatible_similarity_threshold
         raise ValueError("不支持该 Embedding Provider 的检索阈值")
+
+    def validate_runtime(self, *, deepseek_api_key: str) -> None:
+        """启用 LLM Selector 时在应用启动阶段校验真实 DeepSeek 密钥。"""
+        if self.evidence_selector != "llm":
+            return
+        normalized_key = deepseek_api_key.strip()
+        if not normalized_key or normalized_key == "replace-with-deepseek-key":
+            raise RuntimeError(
+                "RAG 已启用 LLM 证据选择，但未配置有效的 DEEPSEEK__API_KEY"
+            )
 
     @model_validator(mode="after")
     def validate_chunk_budget(self) -> "RagSettings":

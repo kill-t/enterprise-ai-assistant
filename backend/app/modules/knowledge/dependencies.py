@@ -5,7 +5,6 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import settings
 from app.infrastructure.database.session import get_db
-from app.infrastructure.embedding.provider_factory import EmbeddingProviderFactory
 from app.infrastructure.object_storage.base import BaseObjectStorage
 from app.infrastructure.object_storage.provider import get_object_storage
 from app.infrastructure.task_queue.document_ingestion_dispatcher import (
@@ -14,9 +13,6 @@ from app.infrastructure.task_queue.document_ingestion_dispatcher import (
 from app.modules.knowledge.repository.document_ingestion_job_repository import (
     DocumentIngestionJobRepository,
 )
-from app.modules.knowledge.retrieval.evidence_selection import (
-    ThresholdEvidenceSelector,
-)
 from app.modules.knowledge.service.document_ingestion_dispatch_service import (
     DocumentIngestionDispatchService,
 )
@@ -24,6 +20,9 @@ from app.modules.knowledge.service.document_service import DocumentService
 from app.modules.knowledge.service.knowledge_base_service import KnowledgeBaseService
 from app.modules.knowledge.service.knowledge_search_service import (
     KnowledgeSearchService,
+)
+from app.modules.knowledge.service.knowledge_search_factory import (
+    create_knowledge_search_service,
 )
 
 
@@ -66,13 +65,8 @@ DocumentServiceDep = Annotated[DocumentService, Depends(get_document_service)]
 def get_knowledge_search_service(
     db: AsyncSession = Depends(get_db),
 ) -> KnowledgeSearchService:
-    """组装向量候选召回和当前无额度的阈值证据选择实现。"""
-    return KnowledgeSearchService(
-        db=db,
-        embedding_factory=EmbeddingProviderFactory(),
-        candidate_multiplier=settings.rag.search_candidate_multiplier,
-        evidence_selector=ThresholdEvidenceSelector(),
-    )
+    """通过共享工厂组装搜索服务，保证与会话 RAG 使用相同灰度策略。"""
+    return create_knowledge_search_service(db=db)
 
 
 KnowledgeSearchServiceDep = Annotated[
