@@ -10,6 +10,7 @@ from app.infrastructure.database.base import Base
 from app.modules.conversation import models as conversation_models  # noqa: F401, E402
 from app.modules.identity.entity.user import UserEntity  # noqa: F401, E402
 from app.modules.knowledge import models as knowledge_models  # noqa: F401, E402
+from app.modules.llm_audit.entity.llm_run import LLMRunEntity  # noqa: F401, E402
 
 
 # Alembic 配置对象保存 alembic.ini 中的配置；数据库地址以应用配置为准。

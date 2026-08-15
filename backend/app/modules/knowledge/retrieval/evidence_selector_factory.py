@@ -12,11 +12,16 @@ from app.modules.knowledge.retrieval.evidence_selection import (
 from app.modules.knowledge.retrieval.llm_evidence_selector import (
     LLMEvidenceSelector,
 )
+from app.modules.llm_audit.factory import create_audited_provider
 
 
 def _create_deepseek_provider(thinking_enabled: bool) -> BaseChatProvider:
     """为在线 Selector 创建 DeepSeek Provider，并显式固定思考模式。"""
-    return DeepSeekProvider(thinking_enabled=thinking_enabled)
+    return create_audited_provider(
+        provider=DeepSeekProvider(thinking_enabled=thinking_enabled),
+        provider_name="deepseek",
+        default_model=settings.rag.llm_evidence_selector_model,
+    )
 
 
 def create_configured_evidence_selector(

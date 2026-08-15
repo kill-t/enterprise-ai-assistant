@@ -268,5 +268,8 @@ class RollingConversationSummaryProcessor:
             ],
             temperature=0.2,
             response_format=ChatResponseFormat.JSON_OBJECT,
-            metadata={"operation": "conversation_summary"},
+            metadata={
+                "operation": "conversation_summary",
+                "conversation_id": str(prepared.conversation_id),
+            },
         )

@@ -45,3 +45,11 @@ class DocumentIngestionJobStatus(str, Enum):
     RUNNING = "running"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
+
+
+class LLMRunStatus(str, Enum):
+    """一次模型调用在审计层看到的稳定终态。"""
+
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+    CANCELLED = "cancelled"

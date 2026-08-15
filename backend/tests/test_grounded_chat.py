@@ -85,7 +85,12 @@ def test_unbound_conversation_keeps_normal_chat_request() -> None:
     assert response.status == MessageStatus.COMPLETED
     assert request.messages[-1].content == "你好，请介绍一下你自己"
     assert "knowledge_sources" not in request.messages[-1].content
-    assert request.metadata == {}
+    assert request.metadata == {
+        "operation": "conversation_chat",
+        "user_id": str(user_id),
+        "conversation_id": str(conversation_id),
+        "message_id": str(response.id),
+    }
     assert [
         call.args[0].content for call in message_repository.create.await_args_list
     ] == [
@@ -159,6 +164,9 @@ def test_grounded_chat_sends_numbered_untrusted_sources_to_provider() -> None:
         "operation": "grounded_chat",
         "source_count": "2",
         "knowledge_base_count": "1",
+        "user_id": str(user_id),
+        "conversation_id": str(conversation_id),
+        "message_id": str(response.id),
     }
     assert persisted_user_message.content == "发布前需要做什么？"
     knowledge_search_service.search.assert_awaited_once()

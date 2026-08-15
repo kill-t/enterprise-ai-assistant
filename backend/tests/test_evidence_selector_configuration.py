@@ -7,6 +7,7 @@ from app.core.config import ModelContextSettings, RagSettings
 from app.infrastructure.llm.providers.mock_provider import MockProvider
 from app.modules.conversation.service import conversation_knowledge_search_service
 from app.modules.knowledge import dependencies as knowledge_dependencies
+from app.modules.knowledge.retrieval import evidence_selector_factory
 from app.modules.knowledge.retrieval.evidence_selection import (
     ThresholdEvidenceSelector,
 )
@@ -91,6 +92,36 @@ def test_llm_factory_passes_model_budget_timeout_and_retry_configuration() -> No
     assert selector.timeout_seconds == 12.5
     assert selector.max_output_retries == 2
     provider_factory.assert_called_once_with(False)
+
+
+def test_online_deepseek_selector_wraps_provider_with_database_audit(
+    monkeypatch,
+) -> None:
+    """默认在线工厂必须审计 EvidenceSelector，评测注入的 Provider 不受影响。"""
+    raw_provider = MockProvider()
+    audited_provider = MockProvider()
+    deepseek_factory = Mock(return_value=raw_provider)
+    audit_factory = Mock(return_value=audited_provider)
+    monkeypatch.setattr(
+        evidence_selector_factory,
+        "DeepSeekProvider",
+        deepseek_factory,
+    )
+    monkeypatch.setattr(
+        evidence_selector_factory,
+        "create_audited_provider",
+        audit_factory,
+    )
+
+    result = evidence_selector_factory._create_deepseek_provider(False)
+
+    assert result is audited_provider
+    deepseek_factory.assert_called_once_with(thinking_enabled=False)
+    audit_factory.assert_called_once_with(
+        provider=raw_provider,
+        provider_name="deepseek",
+        default_model="deepseek-v4-flash",
+    )
 
 
 def test_search_api_dependency_delegates_to_shared_service_factory(monkeypatch) -> None:

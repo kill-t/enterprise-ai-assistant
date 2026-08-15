@@ -98,14 +98,26 @@ def test_memory_manager_deletes_conversation_context() -> None:
 
 
 def test_conversation_service_dependency_injects_memory_manager() -> None:
-    """依赖工厂必须把数据库会话和记忆管理器交给会话服务。"""
+    """依赖工厂必须同时注入数据库、记忆管理器和在线审计 Provider。"""
     db = Mock()
     memory_manager = Mock(spec=MemoryManager)
+    audited_provider = Mock()
 
-    with patch("app.common.dependencies.ConversationService") as service_class:
+    with (
+        patch("app.common.dependencies.ConversationService") as service_class,
+        patch(
+            "app.common.dependencies.create_audited_default_provider",
+            return_value=audited_provider,
+        ) as provider_factory,
+    ):
         get_conversation_service(db=db, memory_manager=memory_manager)
 
-    service_class.assert_called_once_with(db, memory_manager)
+    provider_factory.assert_called_once_with()
+    service_class.assert_called_once_with(
+        db,
+        memory_manager,
+        provider=audited_provider,
+    )
 
 
 def test_send_message_router_is_async_and_awaits_service() -> None:

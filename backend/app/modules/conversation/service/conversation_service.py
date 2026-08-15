@@ -13,6 +13,7 @@ from app.common.exception.business_exception import BusinessException
 from app.common.exception.error_code import ErrorCode
 from app.core.config import settings
 from app.core.loggers import app_logger
+from app.infrastructure.llm.base import BaseChatProvider
 from app.infrastructure.llm.context_manager import (
     ContextBudgetExceededError,
     ContextManager,
@@ -114,6 +115,7 @@ class ConversationService:
         db: AsyncSession,
         memory_manager: MemoryManager,
         knowledge_search_service: ConversationKnowledgeSearchService | None = None,
+        provider: BaseChatProvider | None = None,
     ):
         """组装当前请求使用的仓储、Provider 和上下文组件。"""
         self.db = db
@@ -123,7 +125,8 @@ class ConversationService:
         self.summary_repository = ConversationSummaryRepository(db)
         self.summary_job_repository = ConversationSummaryJobRepository(db)
         self.memory_manager = memory_manager
-        self.provider = ProviderFactory.create()
+        # HTTP Dependency 会注入带审计的 Provider；直接构造时保留便于单元测试的原始实现。
+        self.provider = provider or ProviderFactory.create()
         self.prompt_builder = PromptBuilder()
         self.grounded_prompt_builder = GroundedPromptBuilder()
         self.knowledge_search_service = (
@@ -447,9 +450,15 @@ class ConversationService:
             raise
         await self._commit()
         await self._save_to_memory(conversation_id, user_message)
+        model_request = self._attach_llm_audit_metadata(
+            response_plan.request,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            message_id=assistant_message.id,
+        )
         return _MessageGenerationContext(
             conversation=conversation,
-            request=response_plan.request,
+            request=model_request,
             direct_response=response_plan.direct_response,
             sources=response_plan.sources,
             grounding_applied=response_plan.grounding_applied,
@@ -536,10 +545,16 @@ class ConversationService:
             )
         if response_plan.request is None:
             raise RuntimeError("重试消息缺少模型请求和直接响应")
+        model_request = self._attach_llm_audit_metadata(
+            response_plan.request,
+            user_id=user_id,
+            conversation_id=conversation_id,
+            message_id=assistant_message.id,
+        )
         return await self._generate_assistant_response(
             conversation=conversation,
             conversation_id=conversation_id,
-            request=response_plan.request,
+            request=model_request,
             assistant_message=assistant_message,
             sources=response_plan.sources,
         )
@@ -624,6 +639,28 @@ class ConversationService:
             sources=tuple(search_result.results),
             grounding_applied=True,
         )
+
+    @staticmethod
+    def _attach_llm_audit_metadata(
+        request: ChatRequest | None,
+        *,
+        user_id: UUID,
+        conversation_id: UUID,
+        message_id: UUID,
+    ) -> ChatRequest | None:
+        """增加审计关联 ID，但不把用户问题或来源正文复制到 metadata。"""
+        if request is None:
+            return None
+        metadata = dict(request.metadata)
+        metadata.setdefault("operation", "conversation_chat")
+        metadata.update(
+            {
+                "user_id": str(user_id),
+                "conversation_id": str(conversation_id),
+                "message_id": str(message_id),
+            }
+        )
+        return request.model_copy(update={"metadata": metadata})
 
     @staticmethod
     def _to_stream_sources(

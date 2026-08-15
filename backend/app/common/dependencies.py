@@ -7,6 +7,7 @@ from app.infrastructure.database.session import get_db
 from app.infrastructure.memory.memory_manager import MemoryManager
 from app.infrastructure.memory.provider import get_memory_manager
 from app.modules.conversation.service.conversation_service import ConversationService
+from app.modules.llm_audit.factory import create_audited_default_provider
 
 
 def get_conversation_service(
@@ -14,7 +15,11 @@ def get_conversation_service(
     memory_manager: MemoryManager = Depends(get_memory_manager),
 ) -> ConversationService:
     """组装会话服务及其数据库、短期记忆依赖。"""
-    return ConversationService(db, memory_manager)
+    return ConversationService(
+        db,
+        memory_manager,
+        provider=create_audited_default_provider(),
+    )
 
 
 ConversationServiceDep = Annotated[

@@ -31,6 +31,7 @@ from app.modules.conversation.service.conversation_summary_worker_service import
 from app.modules.conversation.service.summary_failure_policy import (
     SummaryFailurePolicy,
 )
+from app.modules.llm_audit.factory import create_audited_default_provider
 
 
 async def _execute_summary_job(job_id: UUID) -> str:
@@ -42,7 +43,7 @@ async def _execute_summary_job(job_id: UUID) -> str:
             processor = RollingConversationSummaryProcessor(
                 message_repository=MessageRepository(db),
                 summary_repository=ConversationSummaryRepository(db),
-                provider=ProviderFactory.create(),
+                provider=create_audited_default_provider(),
                 model_name=ProviderFactory.get_model_name(),
                 input_budget_tokens=context_settings.available_input_tokens,
             )
