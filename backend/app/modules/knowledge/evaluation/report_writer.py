@@ -63,6 +63,8 @@ class RagEvaluationReportWriter:
             "",
             "| 指标 | 结果 |",
             "| --- | ---: |",
+            f"| 检索策略 | {report.retrieval_strategy or '未记录'} |",
+            f"| 证据选择器 | {report.evidence_selector or '未记录'} |",
             f"| Embedding 模型 | {report.embedding_model or '不适用'} |",
             "| 相似度阈值 | "
             f"{self._format_number(report.similarity_threshold)} |",
@@ -76,12 +78,31 @@ class RagEvaluationReportWriter:
             f"| 引用有效率 | {self._format_rate(report.citation_validity_rate)} |",
             f"| 平均检索延迟 | {self._format_latency(report.average_latency_ms)} |",
             f"| P95 检索延迟 | {self._format_latency(report.p95_latency_ms)} |",
-            "",
+        ]
+        if report.selector_usage is not None:
+            usage = report.selector_usage
+            lines.extend(
+                [
+                    f"| Selector 模型 | {usage.model} |",
+                    f"| Selector 思考模式 | {'开启' if usage.thinking_enabled else '关闭'} |",
+                    f"| Selector 调用次数 | {usage.calls} |",
+                    f"| Selector 输入 Token | {usage.prompt_tokens} |",
+                    f"| Selector 输出 Token | {usage.completion_tokens} |",
+                    f"| Selector 平均延迟 | {self._format_latency(usage.average_latency_ms)} |",
+                    f"| Selector P95 延迟 | {self._format_latency(usage.p95_latency_ms)} |",
+                    f"| Selector 估算费用 | ${usage.estimated_cost_usd:.8f} |",
+                    "| 费用口径 | 缓存未命中单价估算 |",
+                ]
+            )
+        lines.extend(
+            [
+                "",
             "## 逐题明细",
             "",
             "| case_id | Recall | RR | 召回数 | Top 分数 | 行为正确 | 引用有效 | 延迟 |",
             "| --- | ---: | ---: | ---: | ---: | :---: | :---: | ---: |",
-        ]
+            ]
+        )
         for result in report.results:
             lines.append(
                 "| "

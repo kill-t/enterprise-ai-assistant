@@ -416,3 +416,34 @@ def test_deepseek_provider_enables_json_output_for_structured_request() -> None:
     call_args = create.await_args.kwargs
     assert call_args["response_format"] == {"type": "json_object"}
     assert call_args["max_tokens"] > 0
+
+
+def test_deepseek_provider_uses_request_model_and_can_disable_thinking() -> None:
+    """内部评测应能显式使用 Flash 非思考模式，而不修改全局聊天配置。"""
+    create = AsyncMock(
+        return_value=SimpleNamespace(
+            model="deepseek-v4-flash",
+            usage=SimpleNamespace(
+                prompt_tokens=10,
+                completion_tokens=2,
+                total_tokens=12,
+            ),
+            choices=[SimpleNamespace(message=SimpleNamespace(content='{"ok": true}'))],
+        )
+    )
+    provider = object.__new__(DeepSeekProvider)
+    provider.thinking_enabled = False
+    provider.client = SimpleNamespace(
+        chat=SimpleNamespace(completions=SimpleNamespace(create=create))
+    )
+    request = ChatRequest(
+        messages=[ChatMessage(role=ChatRole.USER, content="输出 JSON")],
+        model="deepseek-v4-flash",
+        response_format=ChatResponseFormat.JSON_OBJECT,
+    )
+
+    asyncio.run(provider.chat(request))
+
+    call_args = create.await_args.kwargs
+    assert call_args["model"] == "deepseek-v4-flash"
+    assert call_args["extra_body"] == {"thinking": {"type": "disabled"}}

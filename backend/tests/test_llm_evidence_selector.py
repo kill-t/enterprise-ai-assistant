@@ -18,6 +18,7 @@ from app.modules.knowledge.retrieval.evidence_selection import (
     EvidenceSelectionRequest,
 )
 from app.modules.knowledge.retrieval.llm_evidence_selector import (
+    LLMEvidenceCallMetrics,
     LLMEvidenceDecision,
     LLMEvidenceDecisionReason,
     LLMEvidencePromptBudgetError,
@@ -59,7 +60,33 @@ class RecordingProvider:
             self.payload,
             ensure_ascii=False,
         )
-        return ChatResponse(content=content, model="mock-judge")
+        return ChatResponse(
+            content=content,
+            model="mock-judge",
+            prompt_tokens=40,
+            completion_tokens=5,
+            total_tokens=45,
+        )
+
+
+class SequentialRecordingProvider:
+    """按顺序返回多个结构化结果，用于验证协议纠错重试。"""
+
+    def __init__(self, payloads: list[dict]) -> None:
+        """保存有限响应序列；测试会确保调用次数不超过响应数量。"""
+        self.payloads = iter(payloads)
+        self.requests: list[ChatRequest] = []
+
+    async def chat(self, request: ChatRequest) -> ChatResponse:
+        """记录每次 Prompt，并返回下一个 JSON 决定。"""
+        self.requests.append(request)
+        return ChatResponse(
+            content=json.dumps(next(self.payloads), ensure_ascii=False),
+            model="mock-judge",
+            prompt_tokens=10,
+            completion_tokens=2,
+            total_tokens=12,
+        )
 
 
 class CandidateCountTokenCounter:
@@ -142,6 +169,36 @@ def test_selector_builds_injection_safe_json_prompt_and_maps_source_order() -> N
     assert [source["source_id"] for source in payload["sources"]] == ["S1", "S2"]
     assert payload["sources"][0]["content"] == first.content
     assert str(first.chunk_id) not in sent.messages[1].content
+    assert sent.model == "mock-judge"
+
+
+def test_selector_records_model_usage_without_exposing_candidate_content() -> None:
+    """评测回调应收到 Token 和模型耗时，但不能复制问题或候选正文。"""
+    metrics: list[LLMEvidenceCallMetrics] = []
+    clock_values = iter((10.0, 10.025))
+    selector = build_selector(
+        provider=RecordingProvider(),
+        telemetry_sink=metrics.append,
+        clock=lambda: next(clock_values),
+    )
+
+    asyncio.run(
+        selector.select(
+            build_request(candidates=(build_candidate(content="敏感候选正文"),))
+        )
+    )
+
+    assert metrics == [
+        LLMEvidenceCallMetrics(
+            model="mock-judge",
+            prompt_tokens=40,
+            completion_tokens=5,
+            total_tokens=45,
+            latency_ms=pytest.approx(25.0),
+        )
+    ]
+    assert not hasattr(metrics[0], "content")
+    assert not hasattr(metrics[0], "query")
 
 
 def test_selector_returns_normal_rejection_without_selected_candidates() -> None:
@@ -162,6 +219,36 @@ def test_selector_returns_normal_rejection_without_selected_candidates() -> None
     assert result.answerable is False
     assert result.selected_candidates == ()
     assert result.reason == EvidenceSelectionReason.SELECTOR_REJECTED
+
+
+def test_selector_retries_excess_sources_with_explicit_correction() -> None:
+    """模型忽略 Top-K 时不能静默截断，应纠错一次并重新校验完整结果。"""
+    provider = SequentialRecordingProvider(
+        [
+            {
+                "answerable": True,
+                "selected_source_ids": ["S1", "S2"],
+                "reason": "sufficient",
+            },
+            {
+                "answerable": True,
+                "selected_source_ids": ["S1"],
+                "reason": "sufficient",
+            },
+        ]
+    )
+    candidates = (build_candidate(chunk_index=0), build_candidate(chunk_index=1))
+    selector = build_selector(provider=provider)
+
+    result = asyncio.run(
+        selector.select(build_request(candidates=candidates, top_k=1))
+    )
+
+    assert result.selected_candidates == (candidates[0],)
+    assert len(provider.requests) == 2
+    retry_system_prompt = provider.requests[1].messages[0].content
+    assert "上一次输出未通过协议校验" in retry_system_prompt
+    assert "最多只能有 1 个" in retry_system_prompt
 
 
 def test_empty_candidates_skip_model_and_return_explicit_reason() -> None:
@@ -300,6 +387,8 @@ def build_selector(
     timeout_seconds: float = 1.0,
     input_budget_tokens: int = 10_000,
     token_counter_factory=None,
+    telemetry_sink=None,
+    clock=None,
 ) -> LLMEvidenceSelector:
     """使用稳定模型名和预算组装待测 LLM Selector。"""
     options = {
@@ -310,6 +399,10 @@ def build_selector(
     }
     if token_counter_factory is not None:
         options["token_counter_factory"] = token_counter_factory
+    if telemetry_sink is not None:
+        options["telemetry_sink"] = telemetry_sink
+    if clock is not None:
+        options["clock"] = clock
     return LLMEvidenceSelector(**options)
 
 

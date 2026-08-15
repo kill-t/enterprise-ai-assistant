@@ -1,6 +1,7 @@
 """定义可持久化评测样例、单次观测和最终报告的数据契约。"""
 
 from enum import Enum
+from typing import Literal
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
 
@@ -194,10 +195,32 @@ class RagTagMetrics(BaseModel):
     refusal_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
+class RagSelectorUsageSummary(BaseModel):
+    """汇总证据选择模型的非敏感用量、延迟和可复算费用估计。"""
+
+    provider: str = Field(min_length=1, max_length=100)
+    model: str = Field(min_length=1, max_length=255)
+    thinking_enabled: bool
+    calls: int = Field(ge=0)
+    prompt_tokens: int = Field(ge=0)
+    completion_tokens: int = Field(ge=0)
+    total_tokens: int = Field(ge=0)
+    average_latency_ms: float | None = Field(default=None, ge=0.0)
+    p95_latency_ms: float | None = Field(default=None, ge=0.0)
+    input_price_per_million_usd: float = Field(ge=0.0)
+    output_price_per_million_usd: float = Field(ge=0.0)
+    estimated_cost_usd: float = Field(ge=0.0)
+    # 当前 ChatResponse 不区分缓存命中 Token，因此按较保守的缓存未命中价格估算。
+    pricing_basis: Literal["cache_miss"] = "cache_miss"
+
+
 class RagEvaluationReport(BaseModel):
     """汇总整批评测的核心指标与逐题明细。"""
 
     embedding_model: str | None = None
+    retrieval_strategy: str | None = None
+    evidence_selector: str | None = None
+    selector_usage: RagSelectorUsageSummary | None = None
     similarity_threshold: float | None = Field(default=None, ge=-1.0, le=1.0)
     top_k: int = Field(ge=1, le=20)
     total_cases: int = Field(gt=0)

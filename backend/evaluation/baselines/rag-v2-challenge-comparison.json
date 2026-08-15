@@ -76,12 +76,63 @@
         "近似干扰": {"recall_at_3": 0.27777777777777773, "mean_reciprocal_rank": 0.27777777777777773},
         "困难拒答": {"refusal_accuracy": 0.0}
       }
+    },
+    {
+      "provider": "vector_llm_selector",
+      "model": "text-embedding-v4+deepseek-v4-flash",
+      "stage": "evidence_selection",
+      "similarity_threshold": -1.0,
+      "candidate_limit": 12,
+      "top_k": 3,
+      "thinking_enabled": false,
+      "recall_at_3": 0.8566666666666667,
+      "mean_reciprocal_rank": 0.92,
+      "behavior_accuracy": 0.9428571428571428,
+      "answer_accuracy": 0.92,
+      "refusal_accuracy": 1.0,
+      "average_latency_ms": 3722.909951429548,
+      "p95_latency_ms": 4974.263899988728,
+      "selector_usage": {
+        "calls": 35,
+        "prompt_tokens": 68611,
+        "completion_tokens": 927,
+        "total_tokens": 69538,
+        "average_latency_ms": 965.186528572979,
+        "p95_latency_ms": 1192.544200021075,
+        "input_price_per_million_usd": 0.14,
+        "output_price_per_million_usd": 0.28,
+        "estimated_cost_usd": 0.0098651,
+        "pricing_basis": "cache_miss"
+      },
+      "incorrect_behavior_case_ids": [
+        "bw-acceptance-time",
+        "bw-auth-isolation-path"
+      ],
+      "scenario_metrics": {
+        "同义改写": {
+          "recall_at_3": 0.8571428571428571,
+          "mean_reciprocal_rank": 0.8571428571428571,
+          "behavior_accuracy": 0.8571428571428571
+        },
+        "多文档": {
+          "recall_at_3": 0.6041666666666666,
+          "mean_reciprocal_rank": 1.0,
+          "behavior_accuracy": 1.0
+        },
+        "近似干扰": {
+          "recall_at_3": 0.47222222222222215,
+          "mean_reciprocal_rank": 0.6666666666666666,
+          "behavior_accuracy": 0.8571428571428571
+        },
+        "困难拒答": {"refusal_accuracy": 1.0}
+      }
     }
   ],
   "decision": {
-    "next_strategy": "evidence_selector_evaluation",
+    "next_strategy": "configurable_llm_selector_rollout",
     "hybrid_rollout": "not_enabled",
-    "reason": "等权 RRF 的 Recall@3 与真实向量持平，但 MRR 下降且候选阶段无法拒答，因此保留内部混合能力用于后续实验，不接入聊天；下一步先让 EvidenceSelector 判断答案充分性和重排候选。",
+    "llm_selector_rollout": "approved_for_controlled_integration",
+    "reason": "真实向量宽召回加 DeepSeek V4 Flash 证据选择后，Recall@3、MRR、整体行为准确率和困难拒答准确率均明显超过旧向量阈值基线；平均增加约 953ms 总延迟，35 题 Selector 保守估价约 0.00987 美元。下一步通过配置开关接入在线搜索与聊天，并保留阈值方案作为无密钥和故障降级路径。",
     "deferred": ["BM25", "MQE", "HyDE", "knowledge_graph"]
   }
 }

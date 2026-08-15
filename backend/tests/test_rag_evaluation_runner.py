@@ -12,6 +12,7 @@ from app.modules.knowledge.evaluation.models import (
     ExpectedEvidence,
     RagEvaluationCase,
     RagExpectedBehavior,
+    RagSelectorUsageSummary,
 )
 from app.modules.knowledge.evaluation.report_writer import RagEvaluationReportWriter
 from app.modules.knowledge.evaluation.runner import (
@@ -141,6 +142,26 @@ def test_retrieval_runner_wraps_failure_with_case_id() -> None:
 def test_report_writer_outputs_utf8_json_and_readable_markdown(tmp_path: Path) -> None:
     """报告应同时支持机器比较和人工审查，并清楚显示未执行的引用指标。"""
     report = asyncio.run(build_report_for_writer())
+    report = report.model_copy(
+        update={
+            "retrieval_strategy": "vector",
+            "evidence_selector": "llm",
+            "selector_usage": RagSelectorUsageSummary(
+                provider="deepseek",
+                model="deepseek-v4-flash",
+                thinking_enabled=False,
+                calls=1,
+                prompt_tokens=100,
+                completion_tokens=10,
+                total_tokens=110,
+                average_latency_ms=20.0,
+                p95_latency_ms=20.0,
+                input_price_per_million_usd=0.14,
+                output_price_per_million_usd=0.28,
+                estimated_cost_usd=0.0000168,
+            ),
+        }
+    )
     writer = RagEvaluationReportWriter()
 
     artifacts = writer.write(
@@ -153,6 +174,7 @@ def test_report_writer_outputs_utf8_json_and_readable_markdown(tmp_path: Path) -
     markdown = artifacts.markdown_path.read_text(encoding="utf-8")
     assert payload["total_cases"] == 1
     assert payload["citation_validity_rate"] is None
+    assert payload["selector_usage"]["model"] == "deepseek-v4-flash"
     assert payload["results"][0]["case_id"] == "owner-case"
     assert "# RAG 评测报告" in markdown
     assert "Recall@1" in markdown
@@ -161,6 +183,8 @@ def test_report_writer_outputs_utf8_json_and_readable_markdown(tmp_path: Path) -
     assert "拒答题准确率" in markdown
     assert "## 按标签诊断" in markdown
     assert "Top 分数" in markdown
+    assert "Selector 调用次数 | 1" in markdown
+    assert "Selector 估算费用 | $0.00001680" in markdown
     assert "owner-case" in markdown
 
     with pytest.raises(ValueError, match="报告名称"):

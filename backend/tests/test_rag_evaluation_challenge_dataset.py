@@ -113,6 +113,7 @@ def test_challenge_baseline_records_comparable_runs_without_local_ids() -> None:
         "openai_compatible",
         "pg_trgm",
         "hybrid_rrf",
+        "vector_llm_selector",
     }
     assert runs["mock"]["similarity_threshold"] == 0.2
     assert runs["openai_compatible"]["similarity_threshold"] == 0.45
@@ -137,11 +138,30 @@ def test_challenge_baseline_records_comparable_runs_without_local_ids() -> None:
         runs["hybrid_rrf"]["mean_reciprocal_rank"]
         < runs["openai_compatible"]["mean_reciprocal_rank"]
     )
+    selector_run = runs["vector_llm_selector"]
+    assert selector_run["model"].endswith("deepseek-v4-flash")
+    assert selector_run["thinking_enabled"] is False
+    assert selector_run["recall_at_3"] > runs["openai_compatible"]["recall_at_3"]
+    assert (
+        selector_run["mean_reciprocal_rank"]
+        > runs["openai_compatible"]["mean_reciprocal_rank"]
+    )
+    assert (
+        selector_run["refusal_accuracy"]
+        > runs["openai_compatible"]["refusal_accuracy"]
+    )
+    assert selector_run["selector_usage"]["calls"] == 35
+    assert selector_run["selector_usage"]["total_tokens"] > 0
+    assert selector_run["selector_usage"]["estimated_cost_usd"] > 0
     assert (
         payload["decision"]["next_strategy"]
-        == "evidence_selector_evaluation"
+        == "configurable_llm_selector_rollout"
     )
     assert payload["decision"]["hybrid_rollout"] == "not_enabled"
+    assert (
+        payload["decision"]["llm_selector_rollout"]
+        == "approved_for_controlled_integration"
+    )
     assert not re.search(
         r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
         COMPARISON_PATH.read_text(encoding="utf-8"),

@@ -22,13 +22,14 @@ class DeepSeekProvider(BaseChatProvider):
 
     PROVIDER_NAME = "deepseek"
 
-    def __init__(self):
-        """根据配置创建 DeepSeek 异步客户端。"""
+    def __init__(self, *, thinking_enabled: bool | None = None):
+        """根据配置创建客户端，并允许内部任务显式控制 DeepSeek 思考模式。"""
 
         self.client = AsyncOpenAI(
             api_key=settings.deepseek.api_key,
             base_url=settings.deepseek.base_url,
         )
+        self.thinking_enabled = thinking_enabled
 
     async def chat(
         self,
@@ -38,7 +39,8 @@ class DeepSeekProvider(BaseChatProvider):
         start = time.perf_counter()
 
         request_options = {
-            "model": settings.deepseek.model,
+            # 内部任务可显式选择模型；普通聊天未传时仍使用全局配置。
+            "model": request.model or settings.deepseek.model,
             "messages": self._build_messages(request),
             "temperature": request.temperature,
             "max_tokens": settings.deepseek.max_output_tokens,
@@ -47,6 +49,7 @@ class DeepSeekProvider(BaseChatProvider):
         if request.response_format == ChatResponseFormat.JSON_OBJECT:
             # DeepSeek JSON Output 需要同时传递 response_format，并在 Prompt 中明确要求 JSON。
             request_options["response_format"] = {"type": "json_object"}
+        self._apply_thinking_option(request_options)
 
         response = await self.client.chat.completions.create(**request_options)
 
@@ -83,14 +86,14 @@ class DeepSeekProvider(BaseChatProvider):
         """消费 DeepSeek 的异步 Chunk 流，并转换成厂商无关的内部事件。"""
         start = time.perf_counter()
         content_parts: list[str] = []
-        model = settings.deepseek.model
+        model = request.model or settings.deepseek.model
         finish_reason = "stop"
         prompt_tokens = 0
         completion_tokens = 0
         total_tokens = 0
 
         request_options = {
-            "model": settings.deepseek.model,
+            "model": model,
             "messages": self._build_messages(request),
             "temperature": request.temperature,
             "max_tokens": settings.deepseek.max_output_tokens,
@@ -100,6 +103,7 @@ class DeepSeekProvider(BaseChatProvider):
         }
         if request.response_format == ChatResponseFormat.JSON_OBJECT:
             request_options["response_format"] = {"type": "json_object"}
+        self._apply_thinking_option(request_options)
 
         try:
             sdk_stream = await self.client.chat.completions.create(**request_options)
@@ -159,6 +163,17 @@ class DeepSeekProvider(BaseChatProvider):
             time.perf_counter() - start,
         )
         yield ChatStreamCompletedEvent(response=response)
+
+    def _apply_thinking_option(self, request_options: dict) -> None:
+        """仅在调用方显式选择时发送厂商参数，保持现有聊天默认行为不变。"""
+        thinking_enabled = getattr(self, "thinking_enabled", None)
+        if thinking_enabled is None:
+            return
+        request_options["extra_body"] = {
+            "thinking": {
+                "type": "enabled" if thinking_enabled else "disabled",
+            }
+        }
 
     def _build_messages(
         self,
