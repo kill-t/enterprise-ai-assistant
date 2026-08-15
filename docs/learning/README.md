@@ -74,3 +74,4 @@
 68. [词法检索接口与 RRF 排名融合](68-lexical-retrieval-and-rrf.md)
 69. [PostgreSQL pg_trgm 真实关键词检索基线](69-pg-trgm-real-lexical-baseline.md)
 70. [混合检索编排、渠道降级与真实评测](70-hybrid-retrieval-orchestration-and-evaluation.md)
+71. [LLM 证据充分性选择器契约](71-llm-evidence-selector-contract.md)

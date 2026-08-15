@@ -50,6 +50,34 @@ class MockProvider(BaseChatProvider):
                 total_tokens=30,
             )
 
+        if (
+            request.response_format == ChatResponseFormat.JSON_OBJECT
+            and request.metadata.get("operation") == "evidence_selection"
+        ):
+            # Mock 只验证结构化调用链，不代表真实的证据充分性判断质量。
+            payload = json.loads(request.messages[-1].content)
+            source_ids = [item["source_id"] for item in payload.get("sources", [])]
+            selected_source_ids = source_ids[:1]
+            content = json.dumps(
+                {
+                    "answerable": bool(selected_source_ids),
+                    "selected_source_ids": selected_source_ids,
+                    "reason": (
+                        "sufficient"
+                        if selected_source_ids
+                        else "no_direct_support"
+                    ),
+                },
+                ensure_ascii=False,
+            )
+            return ChatResponse(
+                content=content,
+                model=self.MODEL_NAME,
+                prompt_tokens=20,
+                completion_tokens=10,
+                total_tokens=30,
+            )
+
         return ChatResponse(
             content="Hello, I'm Enterprise AI Assistant.",
             model=self.MODEL_NAME,
