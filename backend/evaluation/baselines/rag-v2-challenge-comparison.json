@@ -56,11 +56,32 @@
         "近似干扰": {"recall_at_3": 0.0, "behavior_accuracy": 0.14285714285714285},
         "困难拒答": {"refusal_accuracy": 0.2}
       }
+    },
+    {
+      "provider": "hybrid_rrf",
+      "model": "text-embedding-v4+pg_trgm-word-similarity",
+      "stage": "candidate_retrieval_only",
+      "similarity_threshold": null,
+      "channel_candidate_limit": 12,
+      "rank_constant": 60,
+      "recall_at_3": 0.7666666666666667,
+      "mean_reciprocal_rank": 0.7333333333333333,
+      "behavior_accuracy": 0.7142857142857143,
+      "refusal_accuracy": 0.0,
+      "average_latency_ms": 3041.2721,
+      "p95_latency_ms": 6391.9143,
+      "scenario_metrics": {
+        "同义改写": {"recall_at_3": 0.7857142857142857, "mean_reciprocal_rank": 0.75},
+        "多文档": {"recall_at_3": 0.5416666666666666, "mean_reciprocal_rank": 0.5833333333333334},
+        "近似干扰": {"recall_at_3": 0.27777777777777773, "mean_reciprocal_rank": 0.27777777777777773},
+        "困难拒答": {"refusal_accuracy": 0.0}
+      }
     }
   ],
   "decision": {
-    "next_strategy": "hybrid_rrf_then_evidence_selector",
-    "reason": "真实向量负责语义召回，pg_trgm 以很低延迟补充原词和术语候选；先通过 RRF 融合两路名次，再由 EvidenceSelector 判断答案充分性，不能把任何一路相似度当作拒答结论。",
-    "deferred": ["MQE", "HyDE", "knowledge_graph"]
+    "next_strategy": "evidence_selector_evaluation",
+    "hybrid_rollout": "not_enabled",
+    "reason": "等权 RRF 的 Recall@3 与真实向量持平，但 MRR 下降且候选阶段无法拒答，因此保留内部混合能力用于后续实验，不接入聊天；下一步先让 EvidenceSelector 判断答案充分性和重排候选。",
+    "deferred": ["BM25", "MQE", "HyDE", "knowledge_graph"]
   }
 }

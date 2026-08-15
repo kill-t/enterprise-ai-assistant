@@ -108,7 +108,12 @@ def test_challenge_baseline_records_comparable_runs_without_local_ids() -> None:
     assert payload["total_cases"] == 35
     assert payload["answer_cases"] == 25
     assert payload["refusal_cases"] == 10
-    assert set(runs) == {"mock", "openai_compatible", "pg_trgm"}
+    assert set(runs) == {
+        "mock",
+        "openai_compatible",
+        "pg_trgm",
+        "hybrid_rrf",
+    }
     assert runs["mock"]["similarity_threshold"] == 0.2
     assert runs["openai_compatible"]["similarity_threshold"] == 0.45
     assert runs["pg_trgm"]["similarity_threshold"] == 0.1
@@ -123,10 +128,20 @@ def test_challenge_baseline_records_comparable_runs_without_local_ids() -> None:
     )
     assert runs["openai_compatible"]["refusal_accuracy"] == 0.1
     assert runs["pg_trgm"]["refusal_accuracy"] == 0.2
+    assert runs["hybrid_rrf"]["stage"] == "candidate_retrieval_only"
+    assert (
+        runs["hybrid_rrf"]["recall_at_3"]
+        == runs["openai_compatible"]["recall_at_3"]
+    )
+    assert (
+        runs["hybrid_rrf"]["mean_reciprocal_rank"]
+        < runs["openai_compatible"]["mean_reciprocal_rank"]
+    )
     assert (
         payload["decision"]["next_strategy"]
-        == "hybrid_rrf_then_evidence_selector"
+        == "evidence_selector_evaluation"
     )
+    assert payload["decision"]["hybrid_rollout"] == "not_enabled"
     assert not re.search(
         r"\b[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}\b",
         COMPARISON_PATH.read_text(encoding="utf-8"),

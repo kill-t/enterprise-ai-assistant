@@ -73,3 +73,4 @@
 67. [RAG 两阶段检索与 EvidenceSelector 契约](67-rag-two-stage-retrieval-contract.md)
 68. [词法检索接口与 RRF 排名融合](68-lexical-retrieval-and-rrf.md)
 69. [PostgreSQL pg_trgm 真实关键词检索基线](69-pg-trgm-real-lexical-baseline.md)
+70. [混合检索编排、渠道降级与真实评测](70-hybrid-retrieval-orchestration-and-evaluation.md)
