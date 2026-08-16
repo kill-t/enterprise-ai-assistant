@@ -5,6 +5,7 @@ import { useRoute, useRouter } from "vue-router";
 import type { MessageResponse, MessageRole, MessageStatus } from "@/api/contracts";
 import ConversationKnowledgeBaseSelector from "@/components/ConversationKnowledgeBaseSelector.vue";
 import MessageCitationList from "@/components/MessageCitationList.vue";
+import MessageMarkdownContent from "@/components/MessageMarkdownContent.vue";
 import { useAuthStore } from "@/stores/auth";
 import { useConversationDetailStore } from "@/stores/conversation-detail";
 import { resetUserDataStores } from "@/stores/user-data";
@@ -182,7 +183,13 @@ watch(
                     <time :datetime="message.created_at">{{ formatMessageTime(message.created_at) }}</time>
                   </div>
                 </header>
-                <p class="message-content">{{ message.content || "模型未产生正文" }}</p>
+                <MessageMarkdownContent
+                  v-if="message.role === 'assistant'"
+                  :content="message.content"
+                />
+                <p v-else class="message-content">
+                  {{ message.content || "消息正文为空" }}
+                </p>
                 <MessageCitationList
                   v-if="message.role === 'assistant' && message.citations?.length"
                   :sources="message.citations"

@@ -162,6 +162,35 @@ describe("ConversationDetailView", () => {
     );
   });
 
+  it("只把助手回答渲染为 Markdown，用户输入始终保持纯文本", async () => {
+    vi.mocked(conversationsApi.getConversation).mockResolvedValue(conversation);
+    vi.mocked(conversationsApi.listConversationMessages).mockResolvedValue([
+      { ...messages[0], content: "**用户输入不应加粗**" },
+      {
+        ...messages[1],
+        content: [
+          "## 助学金标准",
+          "",
+          "| 等级 | 金额 |",
+          "| --- | --- |",
+          "| 一等 | 3800 元 |",
+        ].join("\n"),
+      },
+    ]);
+
+    const { wrapper } = await mountConversationDetailView();
+    await flushPromises();
+
+    const userMessage = wrapper.get(".message-item--user .message-content");
+    expect(userMessage.text()).toBe("**用户输入不应加粗**");
+    expect(userMessage.find("strong").exists()).toBe(false);
+    const assistantMessage = wrapper.get(
+      '.message-item--assistant [data-test="assistant-markdown-content"]',
+    );
+    expect(assistantMessage.get("h2").text()).toBe("助学金标准");
+    expect(assistantMessage.get("table").text()).toContain("3800 元");
+  });
+
   it("在助手历史消息正文下展示持久化引用", async () => {
     const source: MessageSource = {
       knowledge_base_id: "knowledge-base-1",
