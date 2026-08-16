@@ -7,7 +7,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy.dialects import postgresql
 
-from app.common.enums import MessageRole, MessageStatus
+from app.common.enums import MessageRole, MessageStatus, SourceType
 from app.common.exception.business_exception import BusinessException
 from app.common.exception.error_code import ErrorCode
 from app.main import create_app
@@ -112,6 +112,8 @@ def test_history_groups_snapshot_citations_without_n_plus_one_queries() -> None:
     assert responses[1].citations[0].knowledge_base_name == "项目资料"
     assert responses[1].citations[0].content == "发布前必须完成安全评审。"
     assert responses[1].citations[0].score == 0.93
+    assert responses[1].citations[0].source_type == SourceType.PDF
+    assert responses[1].citations[0].source_locator.kind == "page"
     service.message_repository.list_by_conversation.assert_awaited_once_with(
         conversation_id
     )
@@ -228,6 +230,15 @@ def build_citation(
         heading_path_snapshot="项目 > 发布",
         page_start=2,
         page_end=2,
+        source_type_snapshot=(
+            SourceType.PDF if filename.lower().endswith(".pdf") else SourceType.MARKDOWN
+        ),
+        source_locator_snapshot={
+            "kind": "page",
+            "page_start": 2,
+            "page_end": 2,
+            "heading_path": ["项目", "发布"],
+        },
         source_order=source_order,
         retrieval_score=score,
         created_at=datetime.now(timezone.utc),

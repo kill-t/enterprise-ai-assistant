@@ -80,6 +80,13 @@ const messageSources: MessageStreamSource[] = [
     heading_path: "项目 > 发布",
     page_start: 2,
     page_end: 2,
+    source_type: "pdf",
+    source_locator: {
+      kind: "page",
+      page_start: 2,
+      page_end: 2,
+      heading_path: ["项目", "发布"],
+    },
     source_order: 1,
     score: 0.93,
   },

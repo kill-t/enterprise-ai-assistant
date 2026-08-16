@@ -1,4 +1,9 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
+
+from app.modules.knowledge.source_locator import (
+    DocumentSourceLocator,
+    SourceLocator,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -31,3 +36,5 @@ class ChunkDraft:
     page_end: int | None
     token_count: int
     chunker_version: str
+    # 默认整篇位置只用于兼容手工构造的测试或 Adapter；正式 Chunker 会显式填写具体位置。
+    source_locator: SourceLocator = field(default_factory=DocumentSourceLocator)

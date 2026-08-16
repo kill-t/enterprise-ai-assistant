@@ -8,7 +8,7 @@ import pytest
 from sqlalchemy.dialects import postgresql
 from sqlalchemy.exc import OperationalError
 
-from app.common.enums import DocumentStatus
+from app.common.enums import DocumentStatus, SourceType
 from app.modules.knowledge.repository.pg_trgm_lexical_repository import (
     PgTrgmLexicalRepository,
 )
@@ -115,6 +115,11 @@ def test_repository_maps_rows_to_complete_lexical_candidates() -> None:
         heading_path="项目身份",
         page_start=None,
         page_end=None,
+        source_type=SourceType.MARKDOWN,
+        source_locator={
+            "kind": "section",
+            "heading_path": ["项目身份"],
+        },
         token_count=18,
         lexical_score=0.75,
     )
@@ -141,6 +146,8 @@ def test_repository_maps_rows_to_complete_lexical_candidates() -> None:
     assert results[0].chunk_id == row.chunk_id
     assert results[0].knowledge_base_name == "蓝鲸资料"
     assert results[0].content == "蓝鲸项目负责人是林晓"
+    assert results[0].source_type == SourceType.MARKDOWN
+    assert results[0].source_locator.kind == "section"
     assert results[0].lexical_score == pytest.approx(0.75)
 
 

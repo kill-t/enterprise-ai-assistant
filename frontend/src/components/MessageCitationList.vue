@@ -15,16 +15,32 @@ const sortedSources = computed(() =>
   [...props.sources].sort((left, right) => left.source_order - right.source_order),
 );
 
-/** 页码缺失时明确显示未知；起止页相同时只显示一个页码。 */
-function formatPageRange(source: MessageSource): string {
-  if (source.page_start === null) {
-    return "页码未知";
+/** 根据结构化位置展示真正有意义的页码、标题、单元格或 OCR 区域。 */
+function formatSourceLocation(source: MessageSource): string {
+  const locator = source.source_locator;
+  if (locator.kind === "page") {
+    if (locator.page_end === locator.page_start) {
+      return `第 ${locator.page_start} 页`;
+    }
+    return `第 ${locator.page_start}–${locator.page_end} 页`;
   }
-  const pageEnd = source.page_end ?? source.page_start;
-  if (pageEnd === source.page_start) {
-    return `第 ${source.page_start} 页`;
+  if (locator.kind === "section") {
+    const block =
+      locator.block_kind === null
+        ? ""
+        : ` · ${locator.block_kind === "table" ? "表格" : "内容块"} ${
+            (locator.block_index ?? 0) + 1
+          }`;
+    return `${locator.heading_path.join(" / ")}${block}`;
   }
-  return `第 ${source.page_start}–${pageEnd} 页`;
+  if (locator.kind === "sheet_range") {
+    return `${locator.sheet_name}!${locator.cell_range}`;
+  }
+  if (locator.kind === "ocr_region") {
+    const page = locator.page_number === null ? "图片" : `第 ${locator.page_number} 页`;
+    return `${page} · OCR 置信度 ${Math.round(locator.confidence * 100)}%`;
+  }
+  return "整篇文档";
 }
 
 /** 判断指定来源的原文片段当前是否已经展开。 */
@@ -80,9 +96,12 @@ function toggleSource(sourceOrder: number): void {
         <p class="citation-meta">
           <span>{{ source.knowledge_base_name }}</span>
           <span aria-hidden="true">·</span>
-          <span>{{ formatPageRange(source) }}</span>
+          <span>{{ formatSourceLocation(source) }}</span>
         </p>
-        <p v-if="source.heading_path" class="citation-path">
+        <p
+          v-if="source.heading_path && source.source_locator.kind !== 'section'"
+          class="citation-path"
+        >
           {{ source.heading_path }}
         </p>
         <blockquote

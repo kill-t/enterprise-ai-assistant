@@ -693,6 +693,8 @@ class ConversationService:
                 heading_path=source.heading_path,
                 page_start=source.page_start,
                 page_end=source.page_end,
+                source_type=source.source_type,
+                source_locator=source.source_locator,
                 source_order=source_order,
                 score=source.score,
             )

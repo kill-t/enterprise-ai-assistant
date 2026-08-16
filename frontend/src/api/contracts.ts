@@ -2,6 +2,62 @@ export type MessageRole = "system" | "user" | "assistant" | "tool";
 
 export type MessageStatus = "pending" | "completed" | "failed" | "cancelled";
 
+export type SourceType =
+  | "pdf"
+  | "text"
+  | "markdown"
+  | "docx"
+  | "xlsx"
+  | "image";
+
+export interface DocumentSourceLocator {
+  kind: "document";
+}
+
+export interface PageSourceLocator {
+  kind: "page";
+  page_start: number;
+  page_end: number;
+  heading_path: string[];
+}
+
+export interface SectionSourceLocator {
+  kind: "section";
+  heading_path: string[];
+  block_kind: "paragraph" | "list" | "table" | null;
+  block_index: number | null;
+}
+
+export interface SheetRangeSourceLocator {
+  kind: "sheet_range";
+  sheet_name: string;
+  cell_range: string;
+  header_range: string | null;
+}
+
+export interface NormalizedBoundingBox {
+  x_min: number;
+  y_min: number;
+  x_max: number;
+  y_max: number;
+}
+
+export interface OcrRegionSourceLocator {
+  kind: "ocr_region";
+  page_number: number | null;
+  bounding_box: NormalizedBoundingBox;
+  confidence: number;
+  engine: string;
+}
+
+/** 使用 kind 判别不同格式的位置，避免把 Excel 单元格硬塞进页码字段。 */
+export type SourceLocator =
+  | DocumentSourceLocator
+  | PageSourceLocator
+  | SectionSourceLocator
+  | SheetRangeSourceLocator
+  | OcrRegionSourceLocator;
+
 /** 历史引用与实时 sources 共用的前端展示字段。 */
 export interface MessageSource {
   knowledge_base_id: string | null;
@@ -14,6 +70,8 @@ export interface MessageSource {
   heading_path: string | null;
   page_start: number | null;
   page_end: number | null;
+  source_type: SourceType;
+  source_locator: SourceLocator;
   source_order: number;
   score: number;
 }

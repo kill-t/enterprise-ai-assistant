@@ -15,10 +15,12 @@ from sqlalchemy import (
     UniqueConstraint,
     func,
 )
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.database.base import Base
+from app.common.enums import SourceType
 from app.modules.conversation.entity.message import MessageEntity
 from app.modules.knowledge.entity.document import DocumentEntity
 from app.modules.knowledge.entity.document_chunk import DocumentChunkEntity
@@ -71,6 +73,15 @@ class MessageCitationEntity(Base):
             "length(content_snapshot) > 0",
             name="ck_message_citations_content_nonempty",
         ),
+        CheckConstraint(
+            "length(source_type_snapshot) > 0",
+            name="ck_message_citations_source_type_nonempty",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(source_locator_snapshot) = 'object' "
+            "AND source_locator_snapshot ? 'kind'",
+            name="ck_message_citations_source_locator_object",
+        ),
         Index("ix_message_citations_knowledge_base_id", "knowledge_base_id"),
         Index("ix_message_citations_document_id", "document_id"),
         Index("ix_message_citations_chunk_id", "chunk_id"),
@@ -117,6 +128,14 @@ class MessageCitationEntity(Base):
     )
     page_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
     page_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_type_snapshot: Mapped[SourceType] = mapped_column(
+        String(32),
+        nullable=False,
+    )
+    source_locator_snapshot: Mapped[dict[str, object]] = mapped_column(
+        JSONB,
+        nullable=False,
+    )
     source_order: Mapped[int] = mapped_column(Integer, nullable=False)
     retrieval_score: Mapped[float] = mapped_column(Float, nullable=False)
     created_at: Mapped[datetime] = mapped_column(

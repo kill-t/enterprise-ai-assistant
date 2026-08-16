@@ -81,3 +81,4 @@
 75. [LLM 调用审计与独立事务](75-llm-run-audit-and-independent-transaction.md)
 76. [DeepSeek 输出截断、思考预算与失败恢复](76-deepseek-output-truncation-and-recovery.md)
 77. [Vue 助手回答的安全 Markdown 渲染](77-vue-safe-markdown-rendering.md)
+78. [跨文档格式的结构化来源位置](78-structured-source-locator.md)

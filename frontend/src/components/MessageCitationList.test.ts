@@ -15,6 +15,13 @@ const firstSource: MessageSource = {
   heading_path: "实施计划 / 第一阶段",
   page_start: 3,
   page_end: 5,
+  source_type: "pdf",
+  source_locator: {
+    kind: "page",
+    page_start: 3,
+    page_end: 5,
+    heading_path: ["实施计划", "第一阶段"],
+  },
   source_order: 1,
   score: 0.91,
 };
@@ -28,6 +35,13 @@ const secondSource: MessageSource = {
   heading_path: "会议决定",
   page_start: null,
   page_end: null,
+  source_type: "markdown",
+  source_locator: {
+    kind: "section",
+    heading_path: ["会议决定"],
+    block_kind: null,
+    block_index: null,
+  },
   source_order: 2,
   score: 0.83,
 };
@@ -48,7 +62,7 @@ describe("MessageCitationList", () => {
     expect(items[1].text()).toContain("[S2]");
   });
 
-  it("文档已经删除时保留快照提示，未知页码不会被猜测", () => {
+  it("文档已经删除时仍用快照展示结构化章节位置", () => {
     const wrapper = mount(MessageCitationList, {
       props: {
         sources: [
@@ -63,8 +77,48 @@ describe("MessageCitationList", () => {
     });
 
     expect(wrapper.text()).toContain("历史快照");
-    expect(wrapper.text()).toContain("页码未知");
+    expect(wrapper.text()).toContain("会议决定");
     expect(wrapper.find("a").exists()).toBe(false);
+  });
+
+  it("展示 Excel 单元格范围和 OCR 页码置信度", () => {
+    const wrapper = mount(MessageCitationList, {
+      props: {
+        sources: [
+          {
+            ...secondSource,
+            filename: "助学金标准.xlsx",
+            source_type: "xlsx",
+            source_locator: {
+              kind: "sheet_range",
+              sheet_name: "资助标准",
+              cell_range: "A2:F12",
+              header_range: "A1:F1",
+            },
+          },
+          {
+            ...firstSource,
+            filename: "扫描通知.pdf",
+            source_order: 2,
+            source_locator: {
+              kind: "ocr_region",
+              page_number: 4,
+              bounding_box: {
+                x_min: 0.1,
+                y_min: 0.2,
+                x_max: 0.8,
+                y_max: 0.7,
+              },
+              confidence: 0.914,
+              engine: "paddleocr",
+            },
+          },
+        ],
+      },
+    });
+
+    expect(wrapper.text()).toContain("资助标准!A2:F12");
+    expect(wrapper.text()).toContain("第 4 页 · OCR 置信度 91%");
   });
 
   it("长片段默认截短，并允许用户展开和收起原文", async () => {

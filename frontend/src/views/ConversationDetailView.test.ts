@@ -203,6 +203,13 @@ describe("ConversationDetailView", () => {
       heading_path: "实施计划 / 第一阶段",
       page_start: 2,
       page_end: 2,
+      source_type: "pdf",
+      source_locator: {
+        kind: "page",
+        page_start: 2,
+        page_end: 2,
+        heading_path: ["实施计划", "第一阶段"],
+      },
       source_order: 1,
       score: 0.9,
     };

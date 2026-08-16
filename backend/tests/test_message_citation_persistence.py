@@ -20,6 +20,10 @@ from app.modules.conversation.service.conversation_service import ConversationSe
 from app.modules.knowledge.schema.knowledge_search_schema import (
     MultiKnowledgeSearchHit,
 )
+from app.modules.knowledge.source_locator import (
+    build_legacy_source_locator,
+    infer_source_type,
+)
 
 
 def test_citation_repository_replaces_snapshots_without_committing() -> None:
@@ -61,6 +65,10 @@ def test_citation_repository_replaces_snapshots_without_committing() -> None:
     assert entities[0].heading_path_snapshot == first.heading_path
     assert entities[0].page_start == 2
     assert entities[0].page_end == 3
+    assert entities[0].source_type_snapshot == first.source_type
+    assert entities[0].source_locator_snapshot == first.source_locator.model_dump(
+        mode="json"
+    )
     assert entities[0].retrieval_score == 0.93
     db.flush.assert_awaited_once_with()
     db.commit.assert_not_awaited()
@@ -292,4 +300,10 @@ def build_source(
         page_end=page_end,
         token_count=20,
         score=score,
+        source_type=infer_source_type("project-guide.md"),
+        source_locator=build_legacy_source_locator(
+            page_start=page_start,
+            page_end=page_end,
+            heading_path=("项目", "发布"),
+        ),
     )

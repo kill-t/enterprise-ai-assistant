@@ -1,4 +1,68 @@
 
+# Enterprise AI Assistant 当前进度（2026-08-16）
+
+> 本节是继续开发时优先阅读的最新状态。下方旧 Sprint 内容保留为早期历史记录，不能再作为当前待办。
+
+## 当前阶段
+
+RAG 1.0 核心链路已经完成，正在收口 RAG 1.1 的多格式文档能力。
+
+已经完成：
+
+- PDF、TXT、Markdown 上传、解析、Token 分块和可恢复 Worker 入库。
+- Mock 与 OpenAI-compatible Embedding、pgvector 向量检索。
+- pg_trgm 关键词检索、RRF 混合召回和可配置 LLM Evidence Selector。
+- 会话知识库绑定、Grounded Prompt、无证据拒答、SSE sources 和引用快照。
+- Vue 知识库管理、文档状态、会话绑定和引用卡片。
+- 助手 Markdown 安全渲染和表格美化。
+- `source_type + source_locator` 跨格式结构化来源位置。
+
+当前数据库迁移 head：
+
+```text
+d4e8b6c1a209
+```
+
+真实旧数据已验证从 `a1c5e9d3f702` 无损升级；用户、会话、消息、Chunk 和引用数量保持不变。
+
+当前回归结果：
+
+```text
+后端：445 passed
+前端：157 passed
+Ruff：通过
+Vue 类型检查与生产构建：通过
+```
+
+## 下一模块
+
+RAG-9：Word `.docx` Parser。
+
+顺序：
+
+```text
+DOCX 上传白名单
+→ python-docx Parser Adapter
+→ 按正文真实顺序读取段落与表格
+→ 标题路径和块编号
+→ Token 分块、Embedding 与现有 Worker
+→ 引用卡片展示章节/表格位置
+→ Parser、入库、检索和权限回归
+```
+
+之后依次为：Excel `.xlsx`、扫描 PDF/图片 OCR、多格式评测，然后结束 RAG 1.1 并进入 MCP。
+
+## 继续开发时必须保持的约定
+
+- 中文代码注释、日志、学习文档和 Git 提交。
+- 每个模块先讲解，再写接口与测试，最后实现、回归和小练习。
+- PostgreSQL 是业务事实来源；Redis 只做可降级缓存。
+- 原文件保存在 MinIO，Chunk、向量、任务和引用保存在 PostgreSQL。
+- 原始 Markdown 保存在数据库，Vue 负责安全渲染。
+- 旧 `heading_path/page_start/page_end` 暂时保留兼容；新格式使用结构化 Locator。
+- 不执行 `docker compose down -v`，不删除已有数据卷。
+- 工作区未跟踪的 `output/`、`tmp/` 当前不属于功能提交，不要擅自删除或纳入 Git。
+
 ---
 
 ```md

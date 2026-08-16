@@ -5,6 +5,7 @@ import type {
   MessageStatus,
   MessageStreamEvent,
   MessageStreamSource,
+  SourceType,
 } from "@/api/contracts";
 import {
   parseSseStream,
@@ -23,6 +24,14 @@ const MESSAGE_STATUSES = new Set<MessageStatus>([
   "completed",
   "failed",
   "cancelled",
+]);
+const SOURCE_TYPES = new Set<SourceType>([
+  "pdf",
+  "text",
+  "markdown",
+  "docx",
+  "xlsx",
+  "image",
 ]);
 const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -49,6 +58,91 @@ function isNullablePositiveInteger(value: unknown): value is number | null {
   return value === null || (Number.isInteger(value) && Number(value) > 0);
 }
 
+/** 校验归一化 OCR 坐标和左上、右下顺序，防止页面收到无效区域。 */
+function isNormalizedBoundingBox(value: unknown): boolean {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const coordinates = [value.x_min, value.y_min, value.x_max, value.y_max];
+  if (
+    coordinates.some(
+      (coordinate) =>
+        typeof coordinate !== "number" ||
+        !Number.isFinite(coordinate) ||
+        coordinate < 0 ||
+        coordinate > 1,
+    )
+  ) {
+    return false;
+  }
+  return Number(value.x_max) > Number(value.x_min) &&
+    Number(value.y_max) > Number(value.y_min);
+}
+
+/** 按 kind 校验后端结构化来源位置，避免格式错误一直传播到引用组件。 */
+function isSourceLocator(value: unknown): boolean {
+  if (!isRecord(value) || typeof value.kind !== "string") {
+    return false;
+  }
+  if (value.kind === "document") {
+    return true;
+  }
+  if (value.kind === "page") {
+    return (
+      isNullablePositiveInteger(value.page_start) &&
+      value.page_start !== null &&
+      isNullablePositiveInteger(value.page_end) &&
+      value.page_end !== null &&
+      value.page_end >= value.page_start &&
+      Array.isArray(value.heading_path) &&
+      value.heading_path.every(
+        (item) => typeof item === "string" && item.trim().length > 0,
+      )
+    );
+  }
+  if (value.kind === "section") {
+    return (
+      Array.isArray(value.heading_path) &&
+      value.heading_path.length > 0 &&
+      value.heading_path.every(
+        (item) => typeof item === "string" && item.trim().length > 0,
+      ) &&
+      (value.block_kind === null ||
+        value.block_kind === "paragraph" ||
+        value.block_kind === "list" ||
+        value.block_kind === "table") &&
+      (value.block_index === null ||
+        (Number.isInteger(value.block_index) && Number(value.block_index) >= 0)) &&
+      ((value.block_kind === null) === (value.block_index === null))
+    );
+  }
+  if (value.kind === "sheet_range") {
+    const rangePattern = /^[A-Z]{1,3}[1-9][0-9]*:[A-Z]{1,3}[1-9][0-9]*$/;
+    return (
+      typeof value.sheet_name === "string" &&
+      value.sheet_name.trim().length > 0 &&
+      typeof value.cell_range === "string" &&
+      rangePattern.test(value.cell_range) &&
+      (value.header_range === null ||
+        (typeof value.header_range === "string" &&
+          rangePattern.test(value.header_range)))
+    );
+  }
+  if (value.kind === "ocr_region") {
+    return (
+      isNullablePositiveInteger(value.page_number) &&
+      isNormalizedBoundingBox(value.bounding_box) &&
+      typeof value.confidence === "number" &&
+      Number.isFinite(value.confidence) &&
+      value.confidence >= 0 &&
+      value.confidence <= 1 &&
+      typeof value.engine === "string" &&
+      value.engine.trim().length > 0
+    );
+  }
+  return false;
+}
+
 /** 严格校验单条实时来源，避免越界分数和错误页码进入状态层。 */
 function isMessageStreamSource(
   value: unknown,
@@ -72,6 +166,9 @@ function isMessageStreamSource(
     (value.heading_path !== null && typeof value.heading_path !== "string") ||
     !isNullablePositiveInteger(value.page_start) ||
     !isNullablePositiveInteger(value.page_end) ||
+    typeof value.source_type !== "string" ||
+    !SOURCE_TYPES.has(value.source_type as SourceType) ||
+    !isSourceLocator(value.source_locator) ||
     value.source_order !== expectedOrder ||
     typeof value.score !== "number" ||
     !Number.isFinite(value.score) ||

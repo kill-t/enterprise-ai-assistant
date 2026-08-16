@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import bindparam, func, select, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.common.enums import DocumentStatus
+from app.common.enums import DocumentStatus, SourceType
 # Repository 从聚合入口导入实体，确保字符串 relationship 依赖都已注册。
 from app.modules.knowledge.models import (
     DocumentChunkEntity,
@@ -15,6 +15,7 @@ from app.modules.knowledge.models import (
 from app.modules.knowledge.retrieval.lexical_retriever import (
     LexicalRetrievalCandidate,
 )
+from app.modules.knowledge.source_locator import parse_source_locator
 
 
 class PgTrgmLexicalRepository:
@@ -69,6 +70,8 @@ class PgTrgmLexicalRepository:
                 DocumentChunkEntity.heading_path,
                 DocumentChunkEntity.page_start,
                 DocumentChunkEntity.page_end,
+                DocumentChunkEntity.source_type,
+                DocumentChunkEntity.source_locator,
                 DocumentChunkEntity.token_count,
                 lexical_score,
             )
@@ -108,6 +111,8 @@ class PgTrgmLexicalRepository:
                 heading_path=row.heading_path,
                 page_start=row.page_start,
                 page_end=row.page_end,
+                source_type=SourceType(row.source_type),
+                source_locator=parse_source_locator(row.source_locator),
                 token_count=row.token_count,
                 lexical_score=max(0.0, min(1.0, float(row.lexical_score))),
             )

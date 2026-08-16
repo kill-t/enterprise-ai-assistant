@@ -90,6 +90,8 @@ class KnowledgeSearchVectorRetriever(BaseVectorRetriever):
                         heading_path=hit.heading_path,
                         page_start=hit.page_start,
                         page_end=hit.page_end,
+                        source_type=hit.source_type,
+                        source_locator=hit.source_locator,
                         token_count=hit.token_count,
                         vector_score=hit.score,
                     )

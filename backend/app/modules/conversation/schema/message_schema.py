@@ -6,6 +6,11 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field
 
 from app.common.enums import MessageRole, MessageStatus
+from app.common.enums import SourceType
+from app.modules.knowledge.source_locator import (
+    DocumentSourceLocator,
+    SourceLocator,
+)
 
 
 class MessageCreate(BaseModel):
@@ -59,6 +64,12 @@ class MessageCitationResponse(BaseModel):
     )
     page_start: int | None
     page_end: int | None
+    source_type: SourceType = Field(
+        validation_alias="source_type_snapshot"
+    )
+    source_locator: SourceLocator = Field(
+        validation_alias="source_locator_snapshot"
+    )
     source_order: int = Field(gt=0)
     score: float = Field(
         ge=-1.0,
@@ -107,6 +118,8 @@ class MessageStreamSource(BaseModel):
     heading_path: str | None
     page_start: int | None
     page_end: int | None
+    source_type: SourceType = SourceType.TEXT
+    source_locator: SourceLocator = Field(default_factory=DocumentSourceLocator)
     source_order: int = Field(gt=0)
     score: float = Field(ge=-1.0, le=1.0)
 

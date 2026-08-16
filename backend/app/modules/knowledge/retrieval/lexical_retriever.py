@@ -2,8 +2,14 @@
 
 import math
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
+
+from app.common.enums import SourceType
+from app.modules.knowledge.source_locator import (
+    DocumentSourceLocator,
+    SourceLocator,
+)
 
 
 class LexicalRetrievalError(RuntimeError):
@@ -51,6 +57,8 @@ class LexicalRetrievalCandidate:
     page_end: int | None
     token_count: int
     lexical_score: float
+    source_type: SourceType = SourceType.TEXT
+    source_locator: SourceLocator = field(default_factory=DocumentSourceLocator)
 
     def __post_init__(self) -> None:
         """约定词法分数越大越相关，并拒绝无法排序的非法数值。"""

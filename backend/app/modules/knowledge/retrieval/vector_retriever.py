@@ -2,9 +2,15 @@
 
 import math
 from abc import ABC, abstractmethod
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Protocol
 from uuid import UUID
+
+from app.common.enums import SourceType
+from app.modules.knowledge.source_locator import (
+    DocumentSourceLocator,
+    SourceLocator,
+)
 
 
 class VectorRetrievalRequest(Protocol):
@@ -40,6 +46,8 @@ class VectorRetrievalCandidate:
     page_end: int | None
     token_count: int
     vector_score: float
+    source_type: SourceType = SourceType.TEXT
+    source_locator: SourceLocator = field(default_factory=DocumentSourceLocator)
 
     def __post_init__(self) -> None:
         """阻止无法排序或超出余弦相似度范围的分数进入融合层。"""

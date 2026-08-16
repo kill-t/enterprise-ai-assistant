@@ -9,6 +9,7 @@ from app.modules.conversation.entity.message_citation import MessageCitationEnti
 from app.modules.knowledge.schema.knowledge_search_schema import (
     MultiKnowledgeSearchHit,
 )
+from app.modules.knowledge.source_locator import serialize_source_locator
 
 
 class MessageCitationRepository:
@@ -79,6 +80,10 @@ class MessageCitationRepository:
             heading_path_snapshot=source.heading_path,
             page_start=source.page_start,
             page_end=source.page_end,
+            source_type_snapshot=source.source_type,
+            source_locator_snapshot=serialize_source_locator(
+                source.source_locator
+            ),
             source_order=source_order,
             retrieval_score=source.score,
         )

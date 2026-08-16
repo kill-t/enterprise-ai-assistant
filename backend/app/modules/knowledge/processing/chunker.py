@@ -8,6 +8,7 @@ from app.modules.knowledge.processing.schemas import (
     ParsedDocument,
     ParsedSection,
 )
+from app.modules.knowledge.source_locator import build_legacy_source_locator
 
 
 PARAGRAPH_SEPARATOR_PATTERN = re.compile(r"\n\s*\n")
@@ -73,6 +74,11 @@ class TokenAwareChunker:
                         page_end=section.page_number,
                         token_count=token_count,
                         chunker_version=self.chunker_version,
+                        source_locator=build_legacy_source_locator(
+                            page_start=section.page_number,
+                            page_end=section.page_number,
+                            heading_path=section.heading_path,
+                        ),
                     )
                 )
         return drafts

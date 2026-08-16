@@ -1,7 +1,13 @@
 """定义知识检索 Repository 与 Service 之间传递的内部数据。"""
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
+
+from app.common.enums import SourceType
+from app.modules.knowledge.source_locator import (
+    DocumentSourceLocator,
+    SourceLocator,
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -18,6 +24,8 @@ class KnowledgeSearchCandidate:
     page_end: int | None
     token_count: int
     score: float
+    source_type: SourceType = SourceType.TEXT
+    source_locator: SourceLocator = field(default_factory=DocumentSourceLocator)
 
 
 @dataclass(frozen=True, slots=True)
@@ -37,3 +45,5 @@ class MultiKnowledgeSearchCandidate:
     page_end: int | None
     token_count: int
     score: float
+    source_type: SourceType = SourceType.TEXT
+    source_locator: SourceLocator = field(default_factory=DocumentSourceLocator)

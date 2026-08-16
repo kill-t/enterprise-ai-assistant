@@ -47,6 +47,17 @@ class DocumentIngestionJobStatus(str, Enum):
     FAILED = "failed"
 
 
+class SourceType(str, Enum):
+    """标识 Chunk 原文件格式，位置细节由结构化 Locator 单独描述。"""
+
+    PDF = "pdf"
+    TEXT = "text"
+    MARKDOWN = "markdown"
+    DOCX = "docx"
+    XLSX = "xlsx"
+    IMAGE = "image"
+
+
 class LLMRunStatus(str, Enum):
     """一次模型调用在审计层看到的稳定终态。"""
 

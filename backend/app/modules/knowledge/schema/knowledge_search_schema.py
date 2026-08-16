@@ -4,6 +4,12 @@ from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from app.common.enums import SourceType
+from app.modules.knowledge.source_locator import (
+    DocumentSourceLocator,
+    SourceLocator,
+)
+
 
 class KnowledgeSearchRequest(BaseModel):
     """限制用户问题长度和单次返回数量，避免无边界查询。"""
@@ -33,6 +39,8 @@ class KnowledgeSearchHit(BaseModel):
     page_end: int | None
     token_count: int
     score: float = Field(ge=-1.0, le=1.0)
+    source_type: SourceType = SourceType.TEXT
+    source_locator: SourceLocator = Field(default_factory=DocumentSourceLocator)
 
     model_config = ConfigDict(from_attributes=True)
 

@@ -7,6 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.common.enums import DocumentStatus
+from app.common.enums import SourceType
 from app.modules.knowledge.entity.document import DocumentEntity
 from app.modules.knowledge.entity.document_chunk import DocumentChunkEntity
 from app.modules.knowledge.entity.knowledge_base import KnowledgeBaseEntity
@@ -14,6 +15,7 @@ from app.modules.knowledge.search_models import (
     KnowledgeSearchCandidate,
     MultiKnowledgeSearchCandidate,
 )
+from app.modules.knowledge.source_locator import parse_source_locator
 
 
 class KnowledgeSearchRepository:
@@ -74,6 +76,8 @@ class KnowledgeSearchRepository:
                 DocumentChunkEntity.heading_path,
                 DocumentChunkEntity.page_start,
                 DocumentChunkEntity.page_end,
+                DocumentChunkEntity.source_type,
+                DocumentChunkEntity.source_locator,
                 DocumentChunkEntity.token_count,
                 similarity,
             )
@@ -107,6 +111,8 @@ class KnowledgeSearchRepository:
                 heading_path=row.heading_path,
                 page_start=row.page_start,
                 page_end=row.page_end,
+                source_type=SourceType(row.source_type),
+                source_locator=parse_source_locator(row.source_locator),
                 token_count=row.token_count,
                 # 浮点计算可能产生极小越界，响应前收敛到余弦相似度合法区间。
                 score=max(-1.0, min(1.0, float(row.score))),
@@ -173,6 +179,8 @@ class KnowledgeSearchRepository:
                 DocumentChunkEntity.heading_path,
                 DocumentChunkEntity.page_start,
                 DocumentChunkEntity.page_end,
+                DocumentChunkEntity.source_type,
+                DocumentChunkEntity.source_locator,
                 DocumentChunkEntity.token_count,
                 similarity,
             )
@@ -210,6 +218,8 @@ class KnowledgeSearchRepository:
                 heading_path=row.heading_path,
                 page_start=row.page_start,
                 page_end=row.page_end,
+                source_type=SourceType(row.source_type),
+                source_locator=parse_source_locator(row.source_locator),
                 token_count=row.token_count,
                 # PostgreSQL 浮点误差可能产生极小越界，进入响应前收敛到合法范围。
                 score=max(-1.0, min(1.0, float(row.score))),

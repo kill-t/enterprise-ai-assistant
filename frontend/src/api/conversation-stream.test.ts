@@ -45,6 +45,13 @@ function source(overrides: Record<string, unknown> = {}) {
     heading_path: "项目 > 发布",
     page_start: 2,
     page_end: 2,
+    source_type: "pdf",
+    source_locator: {
+      kind: "page",
+      page_start: 2,
+      page_end: 2,
+      heading_path: ["项目", "发布"],
+    },
     source_order: 1,
     score: 0.93,
     ...overrides,
@@ -234,6 +241,59 @@ describe("streamConversationMessage", () => {
     await expect(consume).rejects.toMatchObject({
       code: "INVALID_MESSAGE_EVENT",
     });
+  });
+
+  it("未知来源类型或矛盾位置对象不能进入前端状态层", async () => {
+    const pending = message("pending");
+    const invalidSources = [
+      source({ source_type: "pptx" }),
+      source({
+        source_locator: {
+          kind: "page",
+          page_start: 3,
+          page_end: 2,
+          heading_path: [],
+        },
+      }),
+      source({
+        source_type: "xlsx",
+        source_locator: {
+          kind: "sheet_range",
+          sheet_name: "Sheet1",
+          cell_range: "错误地址",
+          header_range: null,
+        },
+      }),
+    ];
+
+    for (const invalidSource of invalidSources) {
+      const body = [
+        `event: started\ndata: ${JSON.stringify({
+          type: "started",
+          user_message: { ...pending, role: "user", status: "completed" },
+          assistant_message: pending,
+        })}\n\n`,
+        `event: sources\ndata: ${JSON.stringify({
+          type: "sources",
+          message_id: pending.id,
+          sources: [invalidSource],
+        })}\n\n`,
+      ].join("");
+      vi.stubGlobal(
+        "fetch",
+        vi.fn().mockResolvedValue(createStreamResponse(body)),
+      );
+
+      await expect(
+        collectMessageEvents(
+          streamConversationMessage({
+            conversationId: "conversation-1",
+            content: "测试来源位置",
+            token: "access-token",
+          }),
+        ),
+      ).rejects.toMatchObject({ code: "INVALID_MESSAGE_EVENT" });
+    }
   });
 
   it("sources 的消息 ID 与 started 助手不同时拒绝该流", async () => {

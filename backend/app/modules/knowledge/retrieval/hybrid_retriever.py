@@ -1,8 +1,10 @@
 """编排向量和词法候选，并使用 RRF 生成可解释的混合候选榜。"""
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from uuid import UUID
+
+from app.common.enums import SourceType
 
 from app.core.loggers import app_logger
 from app.modules.knowledge.retrieval.lexical_retriever import (
@@ -22,6 +24,10 @@ from app.modules.knowledge.retrieval.vector_retriever import (
     VectorRetrievalCandidate,
     VectorRetrievalError,
     VectorRetrievalScopeError,
+)
+from app.modules.knowledge.source_locator import (
+    DocumentSourceLocator,
+    SourceLocator,
 )
 
 
@@ -80,6 +86,8 @@ class HybridRetrievalCandidate:
     vector_score: float | None
     lexical_score: float | None
     contributions: tuple[RrfRankContribution, ...]
+    source_type: SourceType = SourceType.TEXT
+    source_locator: SourceLocator = field(default_factory=DocumentSourceLocator)
 
     def __post_init__(self) -> None:
         """候选至少来自一个渠道，且融合分数必须可排序。"""
@@ -267,6 +275,8 @@ class HybridRetriever:
                     heading_path=source.heading_path,
                     page_start=source.page_start,
                     page_end=source.page_end,
+                    source_type=source.source_type,
+                    source_locator=source.source_locator,
                     token_count=source.token_count,
                     fused_score=fused_item.fused_score,
                     vector_score=(vector.vector_score if vector is not None else None),
@@ -294,6 +304,8 @@ class HybridRetriever:
             vector.heading_path,
             vector.page_start,
             vector.page_end,
+            vector.source_type,
+            vector.source_locator,
             vector.token_count,
         ) == (
             lexical.knowledge_base_id,
@@ -304,5 +316,7 @@ class HybridRetriever:
             lexical.heading_path,
             lexical.page_start,
             lexical.page_end,
+            lexical.source_type,
+            lexical.source_locator,
             lexical.token_count,
         )

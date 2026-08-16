@@ -18,6 +18,7 @@ from pydantic import (
     model_validator,
 )
 
+from app.common.enums import SourceType
 from app.core.loggers import app_logger
 from app.infrastructure.llm.base import BaseChatProvider
 from app.infrastructure.llm.provider_factory import ProviderFactory
@@ -37,6 +38,7 @@ from app.modules.knowledge.retrieval.evidence_selection import (
     EvidenceSelectionRequest,
     EvidenceSelectionResult,
 )
+from app.modules.knowledge.source_locator import SourceLocator
 
 
 class LLMEvidenceCandidate(EvidenceCandidate, Protocol):
@@ -47,6 +49,8 @@ class LLMEvidenceCandidate(EvidenceCandidate, Protocol):
     heading_path: str | None
     page_start: int | None
     page_end: int | None
+    source_type: SourceType
+    source_locator: SourceLocator
 
 
 LLMEvidenceCandidateT = TypeVar(
@@ -308,6 +312,10 @@ answerable=true 时至少选择一个来源且 reason=sufficient；answerable=fa
                     "heading_path": candidate.heading_path,
                     "page_start": candidate.page_start,
                     "page_end": candidate.page_end,
+                    "source_type": candidate.source_type,
+                    "source_locator": (
+                        candidate.source_locator.model_dump(mode="json")
+                    ),
                     "content": candidate.content,
                 }
                 for source_id, candidate in candidate_by_source_id.items()

@@ -13,6 +13,10 @@ from app.modules.knowledge.processing.ingestion_schemas import (
     DocumentIngestionSource,
     ProcessedDocumentIngestion,
 )
+from app.modules.knowledge.source_locator import (
+    infer_source_type,
+    serialize_source_locator,
+)
 
 
 class DocumentIndexRepository:
@@ -98,6 +102,8 @@ class DocumentIndexRepository:
                 DocumentChunkEntity.document_id == source.document_id
             )
         )
+        # 文件类型对同一文档的全部 Chunk 相同，只需在进入列表映射前判断一次。
+        source_type = infer_source_type(source.filename)
         chunk_entities = [
             DocumentChunkEntity(
                 document_id=source.document_id,
@@ -107,6 +113,8 @@ class DocumentIndexRepository:
                 heading_path=chunk.heading_path,
                 page_start=chunk.page_start,
                 page_end=chunk.page_end,
+                source_type=source_type,
+                source_locator=serialize_source_locator(chunk.source_locator),
                 token_count=chunk.token_count,
                 embedding_model=processed.embedding_model,
                 embedding=list(vector),

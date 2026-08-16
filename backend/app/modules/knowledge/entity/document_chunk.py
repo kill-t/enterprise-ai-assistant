@@ -15,9 +15,11 @@ from sqlalchemy import (
     func,
 )
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.database.base import Base
+from app.common.enums import SourceType
 
 if TYPE_CHECKING:
     from app.modules.knowledge.entity.document import DocumentEntity
@@ -53,6 +55,14 @@ class DocumentChunkEntity(Base):
             "page_start IS NULL OR page_end IS NULL OR page_end >= page_start",
             name="ck_document_chunks_page_order",
         ),
+        CheckConstraint(
+            "length(source_type) > 0",
+            name="ck_document_chunks_source_type_nonempty",
+        ),
+        CheckConstraint(
+            "jsonb_typeof(source_locator) = 'object' AND source_locator ? 'kind'",
+            name="ck_document_chunks_source_locator_object",
+        ),
         Index("ix_document_chunks_document_id", "document_id"),
         Index(
             "ix_document_chunks_embedding_hnsw_cosine",
@@ -85,6 +95,8 @@ class DocumentChunkEntity(Base):
     heading_path: Mapped[str | None] = mapped_column(String(1024), nullable=True)
     page_start: Mapped[int | None] = mapped_column(Integer, nullable=True)
     page_end: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    source_type: Mapped[SourceType] = mapped_column(String(32), nullable=False)
+    source_locator: Mapped[dict[str, object]] = mapped_column(JSONB, nullable=False)
     token_count: Mapped[int] = mapped_column(Integer, nullable=False)
     embedding_model: Mapped[str] = mapped_column(String(100), nullable=False)
     embedding: Mapped[list[float]] = mapped_column(VECTOR(1024), nullable=False)

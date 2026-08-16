@@ -1,5 +1,6 @@
 """构造带稳定来源编号和 Prompt Injection 防护的 RAG 提示词。"""
 
+import json
 from html import escape
 
 from app.modules.knowledge.schema.knowledge_search_schema import (
@@ -59,11 +60,18 @@ class GroundedPromptBuilder:
             page_end=source.page_end,
         )
         heading = source.heading_path or ""
+        locator = json.dumps(
+            source.source_locator.model_dump(mode="json"),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
         return (
             f'<knowledge_source id="{source_id}">\n'
             f"label: [{source_id}]\n"
             f"knowledge_base: {escape(source.knowledge_base_name, quote=True)}\n"
             f"filename: {escape(source.filename, quote=True)}\n"
+            f"source_type: {source.source_type.value}\n"
+            f"source_locator: {escape(locator, quote=True)}\n"
             f"page: {page}\n"
             f"heading: {escape(heading, quote=True)}\n"
             f"content: {escape(source.content, quote=True)}\n"
