@@ -122,8 +122,12 @@ PostgreSQL 保存任务真实状态，Redis 只负责传送 Celery 消息。
 文档接口支持异步上传、状态查询、失败后新建任务重试，以及使用 `DELETED` 墓碑协调 PostgreSQL 与
 MinIO 的可恢复两阶段删除。入库执行期间拒绝删除，避免迟到 Worker 覆盖删除状态。
 前端通过 Pinia 管理文档异步状态和可靠轮询；知识库卡片内可以上传 PDF、TXT、Markdown、Word
-DOCX、Excel XLSX，查看
+DOCX、Excel XLSX、PNG 和 JPEG，查看
 等待、处理、可检索和失败状态，并执行失败重试及带确认的可恢复删除。
+
+扫描 PDF 的无文本页面和独立 PNG/JPEG 会在文档 Worker 中使用本地 RapidOCR + ONNX Runtime
+识别，不需要 OCR API Key。普通 PDF 页面继续优先使用原始文本层；OCR 默认限制图片像素和单文档
+扫描页数，并过滤低置信度文字。第一次 OCR 会加载本地模型，通常比后续处理稍慢。
 
 RAG 原文件保存在 MinIO。控制台地址为
 [http://127.0.0.1:9001](http://127.0.0.1:9001)，本地默认账号和密码均为

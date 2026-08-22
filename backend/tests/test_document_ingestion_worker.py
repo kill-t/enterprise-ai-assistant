@@ -230,6 +230,21 @@ def test_permanent_parse_failure_rolls_back_and_marks_document_failed() -> None:
     assert db.commits == 3
 
 
+def test_temporary_ocr_engine_failure_is_retryable() -> None:
+    """本地 OCR 引擎临时失败应回到 PENDING，而不是要求用户重新上传。"""
+    policy = DocumentIngestionFailurePolicy()
+    error = DocumentParseError(
+        code=DocumentParseErrorCode.OCR_ENGINE_FAILED,
+        message="OCR 引擎调用失败，请稍后重试",
+    )
+
+    decision = policy.classify(error)
+
+    assert decision.retryable is True
+    assert decision.error_code == "OCR_ENGINE_FAILED"
+    assert decision.error_message == "OCR 引擎调用失败，请稍后重试"
+
+
 def test_temporary_storage_failure_returns_job_and_document_to_pending() -> None:
     """MinIO 临时不可用且次数未耗尽时，应保存延迟重试而非永久失败。"""
     job = build_claimed_job(attempts=1, max_attempts=3)

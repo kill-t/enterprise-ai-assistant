@@ -50,6 +50,18 @@ SUPPORTED_DOCUMENT_TYPES: dict[str, tuple[str, set[str]]] = {
             "application/octet-stream",
         },
     ),
+    ".png": (
+        "image/png",
+        {"image/png", "application/octet-stream"},
+    ),
+    ".jpg": (
+        "image/jpeg",
+        {"image/jpeg", "image/jpg", "application/octet-stream"},
+    ),
+    ".jpeg": (
+        "image/jpeg",
+        {"image/jpeg", "image/jpg", "application/octet-stream"},
+    ),
 }
 
 

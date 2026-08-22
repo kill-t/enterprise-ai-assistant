@@ -4,7 +4,10 @@ from datetime import datetime, timedelta
 from celery.exceptions import SoftTimeLimitExceeded
 
 from app.infrastructure.embedding.errors import EmbeddingError, EmbeddingErrorCode
-from app.modules.knowledge.processing.errors import DocumentParseError
+from app.modules.knowledge.processing.errors import (
+    DocumentParseError,
+    DocumentParseErrorCode,
+)
 
 
 class DocumentSourceUnavailableError(Exception):
@@ -76,7 +79,8 @@ class DocumentIngestionFailurePolicy:
             )
         if isinstance(exc, DocumentParseError):
             return DocumentIngestionFailureDecision(
-                retryable=False,
+                # 模型运行时或 ONNX 资源的瞬时故障可以恢复；格式、低置信度和限额错误不可重试。
+                retryable=exc.code == DocumentParseErrorCode.OCR_ENGINE_FAILED,
                 error_code=exc.code.value,
                 error_message=exc.message,
             )

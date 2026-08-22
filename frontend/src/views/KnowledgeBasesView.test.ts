@@ -552,7 +552,7 @@ describe("KnowledgeBasesView", () => {
     });
     await input.trigger("change");
     expect(wrapper.get('[data-test="document-upload-error"]').text()).toContain(
-      "只支持 PDF、TXT、Markdown、Word DOCX 和 Excel XLSX",
+      "只支持 PDF、TXT、Markdown、Word DOCX、Excel XLSX、PNG 和 JPEG",
     );
 
     const oversizedFile = new File(["内容"], "大文件.pdf", {
@@ -605,6 +605,35 @@ describe("KnowledgeBasesView", () => {
         .get('[data-test="upload-document-knowledge-base-1"]')
         .attributes("disabled"),
     ).toBeUndefined();
+  });
+
+  it("PNG 扫描图片通过前端校验并允许开始上传", async () => {
+    vi.mocked(knowledgeBasesApi.listKnowledgeBases).mockResolvedValue([
+      knowledgeBase,
+    ]);
+    const { wrapper } = await mountKnowledgeBasesView();
+    await flushPromises();
+    await wrapper
+      .get('[data-test="manage-documents-knowledge-base-1"]')
+      .trigger("click");
+    await flushPromises();
+    const input = wrapper.get(
+      '[data-test="document-file-input-knowledge-base-1"]',
+    );
+    const file = new File(["PNG"], "奖学金条件.png", {
+      type: "image/png",
+    });
+    Object.defineProperty(input.element, "files", {
+      configurable: true,
+      value: [file],
+    });
+
+    await input.trigger("change");
+
+    expect(wrapper.text()).toContain("已选择：奖学金条件.png");
+    expect(wrapper.find('[data-test="document-upload-error"]').exists()).toBe(
+      false,
+    );
   });
 
   it("上传期间禁用按钮，成功后立即展示等待处理状态", async () => {

@@ -108,6 +108,20 @@ class RagSettings(BaseModel):
         return self
 
 
+class OcrSettings(BaseModel):
+    """控制本地 OCR 可靠性、图片解码和扫描 PDF 渲染资源边界。"""
+
+    provider: Literal["rapidocr"] = "rapidocr"
+    min_confidence: float = Field(default=0.65, ge=0.0, le=1.0)
+    pdf_dpi: int = Field(default=200, ge=72, le=300)
+    max_pdf_pages: int = Field(default=50, gt=0, le=500)
+    max_image_pixels: int = Field(default=25_000_000, gt=0)
+    max_image_width: int = Field(default=10_000, gt=0)
+    max_image_height: int = Field(default=10_000, gt=0)
+    max_lines_per_section: int = Field(default=20, gt=0)
+    max_characters_per_section: int = Field(default=500, gt=0)
+
+
 class ModelContextSettings(BaseModel):
     """描述模型上下文窗口，以及输入预算必须预留的空间。"""
 
@@ -239,6 +253,7 @@ class Settings(BaseSettings):
     object_storage: ObjectStorageSettings = ObjectStorageSettings()
     embedding: EmbeddingSettings = EmbeddingSettings()
     rag: RagSettings = RagSettings()
+    ocr: OcrSettings = OcrSettings()
     auth: AuthSettings = AuthSettings()
     worker: WorkerSettings = WorkerSettings()
     conversation_memory: ConversationMemorySettings = ConversationMemorySettings()

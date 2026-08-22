@@ -18,6 +18,7 @@ from app.modules.knowledge.processing.errors import (
     UnsupportedDocumentTypeError,
 )
 from app.modules.knowledge.processing.docx_parser import DocxParser
+from app.modules.knowledge.processing.image_ocr_parser import ImageOcrParser
 from app.modules.knowledge.processing.markdown_parser import MarkdownParser
 from app.modules.knowledge.processing.parser_registry import DocumentParserRegistry
 from app.modules.knowledge.processing.pdf_parser import PdfParser
@@ -109,6 +110,8 @@ def test_parser_registry_selects_by_case_insensitive_extension() -> None:
     assert isinstance(registry.get_parser("README.Md"), MarkdownParser)
     assert isinstance(registry.get_parser("proposal.DOCX"), DocxParser)
     assert isinstance(registry.get_parser("students.XLSX"), XlsxParser)
+    assert isinstance(registry.get_parser("scan.PNG"), ImageOcrParser)
+    assert isinstance(registry.get_parser("receipt.JpEg"), ImageOcrParser)
 
 
 def test_parser_registry_rejects_unsupported_extension() -> None:

@@ -11,6 +11,7 @@ from app.infrastructure.task_queue.document_ingestion_dispatcher import (
     CeleryDocumentIngestionDispatcher,
 )
 from app.modules.knowledge.processing.parser_registry import DocumentParserRegistry
+from app.modules.knowledge.processing.ocr_provider import RapidOcrProvider
 from app.modules.knowledge.repository.document_index_repository import (
     DocumentIndexRepository,
 )
@@ -34,6 +35,10 @@ from app.modules.knowledge.service.document_ingestion_worker_service import (
 )
 
 
+# 每个 Celery Worker 进程只持有一个懒加载 OCR Provider，避免每份文档重复加载 ONNX 模型。
+_ocr_provider = RapidOcrProvider()
+
+
 async def _execute_document_ingestion_job(job_id: UUID) -> str:
     """在独立异步上下文中组装并执行一个文档入库任务。"""
     try:
@@ -42,7 +47,21 @@ async def _execute_document_ingestion_job(job_id: UUID) -> str:
             processor = DocumentIngestionProcessor(
                 document_repository=document_repository,
                 object_storage=get_object_storage(),
-                parser_registry=DocumentParserRegistry(),
+                parser_registry=DocumentParserRegistry(
+                    ocr_provider=_ocr_provider,
+                    ocr_min_confidence=settings.ocr.min_confidence,
+                    ocr_pdf_dpi=settings.ocr.pdf_dpi,
+                    ocr_max_pdf_pages=settings.ocr.max_pdf_pages,
+                    ocr_max_image_pixels=settings.ocr.max_image_pixels,
+                    ocr_max_image_width=settings.ocr.max_image_width,
+                    ocr_max_image_height=settings.ocr.max_image_height,
+                    ocr_max_lines_per_section=(
+                        settings.ocr.max_lines_per_section
+                    ),
+                    ocr_max_characters_per_section=(
+                        settings.ocr.max_characters_per_section
+                    ),
+                ),
                 embedding_factory=EmbeddingProviderFactory(),
                 chunk_size_tokens=settings.rag.chunk_size_tokens,
                 chunk_overlap_tokens=settings.rag.chunk_overlap_tokens,

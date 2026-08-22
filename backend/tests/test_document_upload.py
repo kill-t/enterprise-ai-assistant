@@ -180,8 +180,8 @@ def test_upload_rejects_archived_knowledge_base_before_reading_file() -> None:
         (
             FakeUpload(
                 b"image",
-                filename="photo.png",
-                content_type="image/png",
+                filename="photo.bmp",
+                content_type="image/bmp",
             ),
             ErrorCode.DOCUMENT_TYPE_NOT_SUPPORTED,
             415,
@@ -265,6 +265,34 @@ def test_upload_accepts_xlsx_with_canonical_mime_type() -> None:
     assert mime_type == (
         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
+
+
+@pytest.mark.parametrize(
+    ("filename", "content_type", "expected_mime_type"),
+    [
+        ("扫描件.PNG", "image/png", "image/png"),
+        ("票据.jpg", "image/jpeg", "image/jpeg"),
+        ("白板.JPEG", "application/octet-stream", "image/jpeg"),
+    ],
+)
+def test_upload_accepts_ocr_image_types(
+    filename: str,
+    content_type: str,
+    expected_mime_type: str,
+) -> None:
+    """PNG 与 JPEG 图片应通过上传白名单并保存标准 MIME。"""
+    service = build_service()
+    upload = FakeUpload(
+        b"image",
+        filename=filename,
+        content_type=content_type,
+    )
+
+    normalized_filename, extension, mime_type = service._validate_metadata(upload)
+
+    assert normalized_filename == filename
+    assert extension in {".png", ".jpg", ".jpeg"}
+    assert mime_type == expected_mime_type
 
 
 
