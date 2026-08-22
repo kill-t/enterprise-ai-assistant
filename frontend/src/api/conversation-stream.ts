@@ -101,9 +101,10 @@ function isSourceLocator(value: unknown): boolean {
     );
   }
   if (value.kind === "section") {
+    const hasBlockLocation =
+      value.block_kind !== null && value.block_index !== null;
     return (
       Array.isArray(value.heading_path) &&
-      value.heading_path.length > 0 &&
       value.heading_path.every(
         (item) => typeof item === "string" && item.trim().length > 0,
       ) &&
@@ -113,7 +114,8 @@ function isSourceLocator(value: unknown): boolean {
         value.block_kind === "table") &&
       (value.block_index === null ||
         (Number.isInteger(value.block_index) && Number(value.block_index) >= 0)) &&
-      ((value.block_kind === null) === (value.block_index === null))
+      ((value.block_kind === null) === (value.block_index === null)) &&
+      (value.heading_path.length > 0 || hasBlockLocation)
     );
   }
   if (value.kind === "sheet_range") {

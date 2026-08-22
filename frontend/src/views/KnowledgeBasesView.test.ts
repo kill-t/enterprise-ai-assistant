@@ -552,7 +552,7 @@ describe("KnowledgeBasesView", () => {
     });
     await input.trigger("change");
     expect(wrapper.get('[data-test="document-upload-error"]').text()).toContain(
-      "只支持 PDF、TXT 和 Markdown",
+      "只支持 PDF、TXT、Markdown 和 Word DOCX",
     );
 
     const oversizedFile = new File(["内容"], "大文件.pdf", {
@@ -600,8 +600,8 @@ describe("KnowledgeBasesView", () => {
       .get('[data-test="manage-documents-knowledge-base-1"]')
       .trigger("click");
     await flushPromises();
-    const file = new File(["# 项目规范"], "项目规范.md", {
-      type: "text/markdown",
+    const file = new File(["OOXML"], "项目方案.docx", {
+      type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
     });
     const input = wrapper.get(
       '[data-test="document-file-input-knowledge-base-1"]',

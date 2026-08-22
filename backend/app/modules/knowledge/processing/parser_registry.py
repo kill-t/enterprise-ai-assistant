@@ -2,6 +2,7 @@ from pathlib import Path
 
 from app.modules.knowledge.processing.base import BaseDocumentParser
 from app.modules.knowledge.processing.errors import UnsupportedDocumentTypeError
+from app.modules.knowledge.processing.docx_parser import DocxParser
 from app.modules.knowledge.processing.markdown_parser import MarkdownParser
 from app.modules.knowledge.processing.pdf_parser import PdfParser
 from app.modules.knowledge.processing.text_parser import TextParser
@@ -11,7 +12,7 @@ class DocumentParserRegistry:
     """根据文件扩展名选择统一 Parser，隐藏具体第三方实现。"""
 
     def __init__(self) -> None:
-        """注册第一版允许的 PDF、TXT 和 Markdown Parser。"""
+        """注册当前允许的 PDF、TXT、Markdown 和 DOCX Parser。"""
         text_parser = TextParser()
         markdown_parser = MarkdownParser()
         self._parsers: dict[str, BaseDocumentParser] = {
@@ -19,6 +20,7 @@ class DocumentParserRegistry:
             ".txt": text_parser,
             ".md": markdown_parser,
             ".markdown": markdown_parser,
+            ".docx": DocxParser(),
         }
 
     def get_parser(self, filename: str) -> BaseDocumentParser:

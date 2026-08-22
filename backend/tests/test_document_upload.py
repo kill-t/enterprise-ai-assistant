@@ -225,6 +225,28 @@ def test_upload_rejects_invalid_file(
     storage.put_object.assert_not_awaited()
 
 
+def test_upload_accepts_docx_with_canonical_mime_type() -> None:
+    """Word 上传应接受标准 MIME，并统一保存标准 OOXML MIME。"""
+    service = build_service()
+    upload = FakeUpload(
+        b"docx",
+        filename="项目方案.DOCX",
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "wordprocessingml.document"
+        ),
+    )
+
+    filename, extension, mime_type = service._validate_metadata(upload)
+
+    assert filename == "项目方案.DOCX"
+    assert extension == ".docx"
+    assert mime_type == (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    )
+
+
+
 def test_upload_rejects_duplicate_sha256_before_object_write() -> None:
     """同一知识库已有相同内容时，应在写入 MinIO 前返回稳定 409。"""
     user_id = uuid4()

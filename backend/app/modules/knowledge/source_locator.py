@@ -57,7 +57,7 @@ class SectionSourceLocator(_ImmutableLocator):
     """表示 Markdown 或 Word 标题下的段落、列表或表格块。"""
 
     kind: Literal["section"] = "section"
-    heading_path: tuple[str, ...] = Field(min_length=1)
+    heading_path: tuple[str, ...] = ()
     block_kind: Literal["paragraph", "list", "table"] | None = None
     block_index: int | None = Field(default=None, ge=0)
 
@@ -72,9 +72,11 @@ class SectionSourceLocator(_ImmutableLocator):
 
     @model_validator(mode="after")
     def validate_block_pair(self) -> "SectionSourceLocator":
-        """块类型和块序号必须同时出现或同时缺失。"""
+        """块字段必须成对；没有标题时必须依靠块信息完成定位。"""
         if (self.block_kind is None) != (self.block_index is None):
             raise ValueError("block_kind 与 block_index 必须同时提供")
+        if not self.heading_path and self.block_kind is None:
+            raise ValueError("章节位置必须包含标题路径或内容块位置")
         return self
 
 

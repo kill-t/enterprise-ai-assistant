@@ -81,6 +81,28 @@ describe("MessageCitationList", () => {
     expect(wrapper.find("a").exists()).toBe(false);
   });
 
+  it("Word 引用展示标题路径、块类型和序号", () => {
+    const wrapper = mount(MessageCitationList, {
+      props: {
+        sources: [
+          {
+            ...secondSource,
+            filename: "资助政策.docx",
+            source_type: "docx",
+            source_locator: {
+              kind: "section",
+              heading_path: ["资助政策", "申请条件"],
+              block_kind: "table",
+              block_index: 0,
+            },
+          },
+        ],
+      },
+    });
+
+    expect(wrapper.text()).toContain("资助政策 / 申请条件 · 表格 1");
+  });
+
   it("展示 Excel 单元格范围和 OCR 页码置信度", () => {
     const wrapper = mount(MessageCitationList, {
       props: {

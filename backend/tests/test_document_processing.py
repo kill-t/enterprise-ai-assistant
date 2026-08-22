@@ -17,6 +17,7 @@ from app.modules.knowledge.processing.errors import (
     DocumentParseErrorCode,
     UnsupportedDocumentTypeError,
 )
+from app.modules.knowledge.processing.docx_parser import DocxParser
 from app.modules.knowledge.processing.markdown_parser import MarkdownParser
 from app.modules.knowledge.processing.parser_registry import DocumentParserRegistry
 from app.modules.knowledge.processing.pdf_parser import PdfParser
@@ -105,14 +106,15 @@ def test_parser_registry_selects_by_case_insensitive_extension() -> None:
     assert isinstance(registry.get_parser("manual.PDF"), PdfParser)
     assert isinstance(registry.get_parser("notes.TXT"), TextParser)
     assert isinstance(registry.get_parser("README.Md"), MarkdownParser)
+    assert isinstance(registry.get_parser("proposal.DOCX"), DocxParser)
 
 
 def test_parser_registry_rejects_unsupported_extension() -> None:
-    """尚未支持的 Office 文件必须在解析前明确失败。"""
+    """尚未支持的旧版 Office 文件必须在解析前明确失败。"""
     registry = DocumentParserRegistry()
 
     with pytest.raises(UnsupportedDocumentTypeError):
-        registry.get_parser("proposal.docx")
+        registry.get_parser("proposal.doc")
 
 
 def test_pdf_parser_preserves_page_numbers_and_skips_empty_pages(

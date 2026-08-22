@@ -110,6 +110,17 @@ def test_source_locator_rejects_contradictory_or_out_of_range_values(
         parse_source_locator(payload)
 
 
+def test_section_locator_allows_unheaded_docx_block_but_not_empty_location() -> None:
+    """Word 标题前正文可用块编号定位，但空标题且无块信息仍然无效。"""
+    locator = SectionSourceLocator(
+        heading_path=(), block_kind="paragraph", block_index=0
+    )
+
+    assert locator.heading_path == ()
+    with pytest.raises(ValidationError):
+        SectionSourceLocator(heading_path=())
+
+
 def test_source_type_is_derived_from_filename_without_trusting_letter_case() -> None:
     """入库时从受支持扩展名生成稳定来源类型，为后续 Parser Adapter 复用。"""
     assert infer_source_type("政策.PDF") == SourceType.PDF

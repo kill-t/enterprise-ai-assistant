@@ -296,6 +296,51 @@ describe("streamConversationMessage", () => {
     }
   });
 
+  it("Word 标题前正文可凭内容块位置通过 SSE 校验", async () => {
+    const pending = message("pending");
+    const wordSource = source({
+      filename: "项目方案.docx",
+      source_type: "docx",
+      heading_path: null,
+      source_locator: {
+        kind: "section",
+        heading_path: [],
+        block_kind: "paragraph",
+        block_index: 0,
+      },
+    });
+    const body = [
+      `event: started\ndata: ${JSON.stringify({
+        type: "started",
+        user_message: { ...pending, role: "user", status: "completed" },
+        assistant_message: pending,
+      })}\n\n`,
+      `event: sources\ndata: ${JSON.stringify({
+        type: "sources",
+        message_id: pending.id,
+        sources: [wordSource],
+      })}\n\n`,
+      `event: completed\ndata: ${JSON.stringify({
+        type: "completed",
+        message: { ...pending, status: "completed", sources: [wordSource] },
+      })}\n\n`,
+    ].join("");
+    vi.stubGlobal(
+      "fetch",
+      vi.fn().mockResolvedValue(createStreamResponse(body)),
+    );
+
+    const events = await collectMessageEvents(
+      streamConversationMessage({
+        conversationId: "conversation-1",
+        content: "读取前言",
+        token: "access-token",
+      }),
+    );
+
+    expect(events[1]).toMatchObject({ type: "sources", sources: [wordSource] });
+  });
+
   it("sources 的消息 ID 与 started 助手不同时拒绝该流", async () => {
     const pending = message("pending");
     const body = [

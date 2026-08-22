@@ -1,11 +1,13 @@
 import asyncio
 import hashlib
 from datetime import datetime, timezone
+from io import BytesIO
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, Mock
 from uuid import uuid4
 
 import pytest
+from docx import Document
 
 from app.common.enums import DocumentIngestionJobStatus, DocumentStatus
 from app.core.config import EmbeddingSettings, RagSettings, WorkerSettings
@@ -39,6 +41,7 @@ from app.modules.knowledge.service.document_ingestion_processor import (
 from app.modules.knowledge.service.document_ingestion_worker_service import (
     DocumentIngestionWorkerService,
 )
+from app.modules.knowledge.source_locator import SectionSourceLocator
 
 
 class RecordingDatabase:
@@ -342,6 +345,54 @@ def test_real_processor_verifies_source_and_builds_mock_vectors() -> None:
     assert len(processed.chunks) == len(processed.vectors) >= 1
     assert all(len(vector) == 1024 for vector in processed.vectors)
     source_repository.stage_success.assert_awaited_once()
+
+
+def test_real_processor_ingests_docx_table_with_mock_embedding() -> None:
+    """真实处理器应让 DOCX 表格经过解析、分块和 Mock 向量化完整链路。"""
+    document = Document()
+    document.add_heading("资助标准", level=1)
+    table = document.add_table(rows=2, cols=2)
+    table.cell(0, 0).text = "等级"
+    table.cell(0, 1).text = "金额"
+    table.cell(1, 0).text = "一等"
+    table.cell(1, 1).text = "5000 元"
+    output = BytesIO()
+    document.save(output)
+    content = output.getvalue()
+    source = DocumentIngestionSource(
+        document_id=uuid4(),
+        filename="资助政策.docx",
+        object_key="users/u/documents/d.docx",
+        size_bytes=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
+        embedding_profile=EmbeddingProfile(
+            provider="mock",
+            model="mock-hash-1024",
+            dimension=1024,
+        ),
+    )
+    source_repository = SimpleNamespace(
+        get_processing_source=AsyncMock(return_value=source),
+        stage_success=AsyncMock(return_value=source.document_id),
+    )
+    processor = DocumentIngestionProcessor(
+        document_repository=source_repository,
+        object_storage=SimpleNamespace(get_object=AsyncMock(return_value=content)),
+        parser_registry=DocumentParserRegistry(),
+        embedding_factory=EmbeddingProviderFactory(EmbeddingSettings()),
+        chunk_size_tokens=600,
+        chunk_overlap_tokens=80,
+    )
+
+    processed = asyncio.run(processor.process(source))
+
+    assert processed.parser_version == "docx-python-docx-v1"
+    assert len(processed.chunks) == len(processed.vectors) == 1
+    assert "| 等级 | 金额 |" in processed.chunks[0].content
+    assert processed.chunks[0].source_locator == SectionSourceLocator(
+        heading_path=("资助标准",), block_kind="table", block_index=0
+    )
+    assert len(processed.vectors[0]) == 1024
 
 
 def test_processor_rejects_downloaded_content_with_different_hash() -> None:

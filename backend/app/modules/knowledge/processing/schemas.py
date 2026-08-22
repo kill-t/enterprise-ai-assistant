@@ -8,11 +8,13 @@ from app.modules.knowledge.source_locator import (
 
 @dataclass(frozen=True, slots=True)
 class ParsedSection:
-    """表示具有同一页码或 Markdown 标题路径的连续原文。"""
+    """表示具有同一页码、标题路径或结构位置的连续原文。"""
 
     content: str
     page_number: int | None = None
     heading_path: tuple[str, ...] = ()
+    # 旧 Parser 可以留空并由 Chunker 推断；Office/OCR Parser 应提供精确位置。
+    source_locator: SourceLocator | None = None
 
 
 @dataclass(frozen=True, slots=True)

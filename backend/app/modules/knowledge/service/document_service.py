@@ -36,6 +36,13 @@ SUPPORTED_DOCUMENT_TYPES: dict[str, tuple[str, set[str]]] = {
         "text/markdown",
         {"text/markdown", "text/plain", "application/octet-stream"},
     ),
+    ".docx": (
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        {
+            "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            "application/octet-stream",
+        },
+    ),
 }
 
 
@@ -400,7 +407,7 @@ class DocumentService:
         if type_config is None or request_mime_type not in type_config[1]:
             raise BusinessException(
                 code=ErrorCode.DOCUMENT_TYPE_NOT_SUPPORTED,
-                message="仅支持 PDF、TXT 和 Markdown 文件",
+                message="仅支持 PDF、TXT、Markdown 和 Word DOCX 文件",
                 status_code=415,
             )
         canonical_mime_type = type_config[0]

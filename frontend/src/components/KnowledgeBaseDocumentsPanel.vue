@@ -9,7 +9,13 @@ import type {
 import { useDocumentStore } from "@/stores/documents";
 
 const MAX_FILE_SIZE_BYTES = 20 * 1024 * 1024;
-const SUPPORTED_FILE_EXTENSIONS = new Set(["pdf", "txt", "md", "markdown"]);
+const SUPPORTED_FILE_EXTENSIONS = new Set([
+  "pdf",
+  "txt",
+  "md",
+  "markdown",
+  "docx",
+]);
 
 const props = defineProps<{ knowledgeBase: KnowledgeBaseResponse }>();
 const documentStore = useDocumentStore();
@@ -60,7 +66,7 @@ function fileExtension(filename: string): string {
  */
 function validateFile(file: File): string | null {
   if (!SUPPORTED_FILE_EXTENSIONS.has(fileExtension(file.name))) {
-    return "只支持 PDF、TXT 和 Markdown 文件";
+    return "只支持 PDF、TXT、Markdown 和 Word DOCX 文件";
   }
   if (file.size === 0) {
     return "不能上传空文件";
@@ -203,12 +209,12 @@ onUnmounted(() => documentStore.stopPolling(props.knowledgeBase.id));
           ref="fileInput"
           :data-test="`document-file-input-${knowledgeBase.id}`"
           type="file"
-          accept=".pdf,.txt,.md,.markdown,application/pdf,text/plain,text/markdown"
+          accept=".pdf,.txt,.md,.markdown,.docx,application/pdf,text/plain,text/markdown,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
           :disabled="documentStore.isUploadingToKnowledgeBase(knowledgeBase.id)"
           @change="handleFileSelection"
         >
       </label>
-      <p class="document-upload-help">支持 PDF、TXT、Markdown，单个文件不超过 20 MB。</p>
+      <p class="document-upload-help">支持 PDF、TXT、Markdown、Word DOCX，单个文件不超过 20 MB。</p>
       <p v-if="selectedFile" class="document-selected-file">
         已选择：{{ selectedFile.name }}（{{ formatFileSize(selectedFile.size) }}）
       </p>

@@ -1,5 +1,5 @@
 
-# Enterprise AI Assistant 当前进度（2026-08-16）
+# Enterprise AI Assistant 当前进度（2026-08-22）
 
 > 本节是继续开发时优先阅读的最新状态。下方旧 Sprint 内容保留为早期历史记录，不能再作为当前待办。
 
@@ -9,7 +9,7 @@ RAG 1.0 核心链路已经完成，正在收口 RAG 1.1 的多格式文档能力
 
 已经完成：
 
-- PDF、TXT、Markdown 上传、解析、Token 分块和可恢复 Worker 入库。
+- PDF、TXT、Markdown、Word DOCX 上传、解析、Token 分块和可恢复 Worker 入库。
 - Mock 与 OpenAI-compatible Embedding、pgvector 向量检索。
 - pg_trgm 关键词检索、RRF 混合召回和可配置 LLM Evidence Selector。
 - 会话知识库绑定、Grounded Prompt、无证据拒答、SSE sources 和引用快照。
@@ -28,29 +28,31 @@ d4e8b6c1a209
 当前回归结果：
 
 ```text
-后端：445 passed
-前端：157 passed
+后端：455 passed
+前端：159 passed
 Ruff：通过
 Vue 类型检查与生产构建：通过
 ```
 
-## 下一模块
+## 刚完成模块
 
 RAG-9：Word `.docx` Parser。
 
 顺序：
 
 ```text
-DOCX 上传白名单
-→ python-docx Parser Adapter
-→ 按正文真实顺序读取段落与表格
-→ 标题路径和块编号
-→ Token 分块、Embedding 与现有 Worker
-→ 引用卡片展示章节/表格位置
-→ Parser、入库、检索和权限回归
+DOCX 上传白名单与 Vue 文件选择
+→ 不可信 OOXML ZIP 安全检查
+→ python-docx 按正文真实顺序读取段落与表格
+→ 标题路径、块类型和块编号
+→ Token 分块、Mock Embedding 与现有 Worker
+→ 引用卡片展示章节/段落/列表/表格位置
 ```
 
-之后依次为：Excel `.xlsx`、扫描 PDF/图片 OCR、多格式评测，然后结束 RAG 1.1 并进入 MCP。
+## 下一模块
+
+RAG-10：Excel `.xlsx` Parser。完成工作表、表头感知的数据区域切分和单元格范围引用；之后是扫描
+PDF/图片 OCR、多格式评测，然后结束 RAG 1.1 并进入 MCP。
 
 ## 继续开发时必须保持的约定
 

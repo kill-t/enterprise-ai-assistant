@@ -25,13 +25,17 @@ function formatSourceLocation(source: MessageSource): string {
     return `第 ${locator.page_start}–${locator.page_end} 页`;
   }
   if (locator.kind === "section") {
+    const blockLabels = {
+      paragraph: "段落",
+      list: "列表",
+      table: "表格",
+    } as const;
     const block =
       locator.block_kind === null
         ? ""
-        : ` · ${locator.block_kind === "table" ? "表格" : "内容块"} ${
-            (locator.block_index ?? 0) + 1
-          }`;
-    return `${locator.heading_path.join(" / ")}${block}`;
+        : ` · ${blockLabels[locator.block_kind]} ${(locator.block_index ?? 0) + 1}`;
+    const heading = locator.heading_path.join(" / ") || "文档开头";
+    return `${heading}${block}`;
   }
   if (locator.kind === "sheet_range") {
     return `${locator.sheet_name}!${locator.cell_range}`;

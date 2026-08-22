@@ -121,7 +121,8 @@ PostgreSQL 保存任务真实状态，Redis 只负责传送 Celery 消息。
 
 文档接口支持异步上传、状态查询、失败后新建任务重试，以及使用 `DELETED` 墓碑协调 PostgreSQL 与
 MinIO 的可恢复两阶段删除。入库执行期间拒绝删除，避免迟到 Worker 覆盖删除状态。
-前端通过 Pinia 管理文档异步状态和可靠轮询；知识库卡片内可以上传 PDF、TXT、Markdown，查看
+前端通过 Pinia 管理文档异步状态和可靠轮询；知识库卡片内可以上传 PDF、TXT、Markdown、Word
+DOCX，查看
 等待、处理、可检索和失败状态，并执行失败重试及带确认的可恢复删除。
 
 RAG 原文件保存在 MinIO。控制台地址为

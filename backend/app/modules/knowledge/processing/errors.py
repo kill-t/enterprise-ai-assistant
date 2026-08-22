@@ -9,6 +9,8 @@ class DocumentParseErrorCode(str, Enum):
     NO_EXTRACTABLE_TEXT = "NO_EXTRACTABLE_TEXT"
     PDF_ENCRYPTED = "PDF_ENCRYPTED"
     PDF_INVALID = "PDF_INVALID"
+    DOCX_INVALID = "DOCX_INVALID"
+    OFFICE_ARCHIVE_UNSAFE = "OFFICE_ARCHIVE_UNSAFE"
 
 
 class DocumentParseError(Exception):
