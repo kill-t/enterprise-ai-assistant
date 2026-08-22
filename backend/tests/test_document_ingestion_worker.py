@@ -8,6 +8,7 @@ from uuid import uuid4
 
 import pytest
 from docx import Document
+from openpyxl import Workbook
 
 from app.common.enums import DocumentIngestionJobStatus, DocumentStatus
 from app.core.config import EmbeddingSettings, RagSettings, WorkerSettings
@@ -42,6 +43,7 @@ from app.modules.knowledge.service.document_ingestion_worker_service import (
     DocumentIngestionWorkerService,
 )
 from app.modules.knowledge.source_locator import SectionSourceLocator
+from app.modules.knowledge.source_locator import SheetRangeSourceLocator
 
 
 class RecordingDatabase:
@@ -391,6 +393,55 @@ def test_real_processor_ingests_docx_table_with_mock_embedding() -> None:
     assert "| 等级 | 金额 |" in processed.chunks[0].content
     assert processed.chunks[0].source_locator == SectionSourceLocator(
         heading_path=("资助标准",), block_kind="table", block_index=0
+    )
+    assert len(processed.vectors[0]) == 1024
+
+
+def test_real_processor_ingests_xlsx_range_with_mock_embedding() -> None:
+    """真实处理器应让 XLSX 数据范围经过解析、分块和 Mock 向量化完整链路。"""
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = "资助标准"
+    sheet.append(["等级", "金额"])
+    sheet.append(["一等", 5000])
+    output = BytesIO()
+    workbook.save(output)
+    workbook.close()
+    content = output.getvalue()
+    source = DocumentIngestionSource(
+        document_id=uuid4(),
+        filename="资助标准.xlsx",
+        object_key="users/u/documents/d.xlsx",
+        size_bytes=len(content),
+        sha256=hashlib.sha256(content).hexdigest(),
+        embedding_profile=EmbeddingProfile(
+            provider="mock",
+            model="mock-hash-1024",
+            dimension=1024,
+        ),
+    )
+    source_repository = SimpleNamespace(
+        get_processing_source=AsyncMock(return_value=source),
+        stage_success=AsyncMock(return_value=source.document_id),
+    )
+    processor = DocumentIngestionProcessor(
+        document_repository=source_repository,
+        object_storage=SimpleNamespace(get_object=AsyncMock(return_value=content)),
+        parser_registry=DocumentParserRegistry(),
+        embedding_factory=EmbeddingProviderFactory(EmbeddingSettings()),
+        chunk_size_tokens=600,
+        chunk_overlap_tokens=80,
+    )
+
+    processed = asyncio.run(processor.process(source))
+
+    assert processed.parser_version == "xlsx-openpyxl-v1"
+    assert len(processed.chunks) == len(processed.vectors) == 1
+    assert "| 等级 | 金额 |" in processed.chunks[0].content
+    assert processed.chunks[0].source_locator == SheetRangeSourceLocator(
+        sheet_name="资助标准",
+        cell_range="A2:B2",
+        header_range="A1:B1",
     )
     assert len(processed.vectors[0]) == 1024
 

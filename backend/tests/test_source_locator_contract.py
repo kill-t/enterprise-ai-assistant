@@ -121,6 +121,21 @@ def test_section_locator_allows_unheaded_docx_block_but_not_empty_location() -> 
         SectionSourceLocator(heading_path=())
 
 
+@pytest.mark.parametrize(
+    "cell_range",
+    ["B3:A2", "XFE1:XFE2", "A1048577:A1048577"],
+)
+def test_sheet_range_locator_rejects_reverse_or_out_of_excel_bounds(
+    cell_range: str,
+) -> None:
+    """Excel 范围必须顺序正确且位于 XLSX 最大行列边界内。"""
+    with pytest.raises(ValidationError):
+        SheetRangeSourceLocator(
+            sheet_name="Sheet1",
+            cell_range=cell_range,
+        )
+
+
 def test_source_type_is_derived_from_filename_without_trusting_letter_case() -> None:
     """入库时从受支持扩展名生成稳定来源类型，为后续 Parser Adapter 复用。"""
     assert infer_source_type("政策.PDF") == SourceType.PDF

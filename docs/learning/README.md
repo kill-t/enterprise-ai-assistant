@@ -83,3 +83,4 @@
 77. [Vue 助手回答的安全 Markdown 渲染](77-vue-safe-markdown-rendering.md)
 78. [跨文档格式的结构化来源位置](78-structured-source-locator.md)
 79. [Word DOCX 解析与结构化内容块](79-docx-parser-and-structured-blocks.md)
+80. [Excel XLSX 解析与单元格范围引用](80-xlsx-parser-and-cell-range-citations.md)

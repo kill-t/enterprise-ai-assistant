@@ -246,6 +246,27 @@ def test_upload_accepts_docx_with_canonical_mime_type() -> None:
     )
 
 
+def test_upload_accepts_xlsx_with_canonical_mime_type() -> None:
+    """Excel 上传应接受标准 MIME，并统一保存标准 OOXML MIME。"""
+    service = build_service()
+    upload = FakeUpload(
+        b"xlsx",
+        filename="学生名单.XLSX",
+        content_type=(
+            "application/vnd.openxmlformats-officedocument."
+            "spreadsheetml.sheet"
+        ),
+    )
+
+    filename, extension, mime_type = service._validate_metadata(upload)
+
+    assert filename == "学生名单.XLSX"
+    assert extension == ".xlsx"
+    assert mime_type == (
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
 
 def test_upload_rejects_duplicate_sha256_before_object_write() -> None:
     """同一知识库已有相同内容时，应在写入 MinIO 前返回稳定 409。"""

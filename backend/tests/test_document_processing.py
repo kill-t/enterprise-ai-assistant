@@ -23,6 +23,7 @@ from app.modules.knowledge.processing.parser_registry import DocumentParserRegis
 from app.modules.knowledge.processing.pdf_parser import PdfParser
 from app.modules.knowledge.processing.schemas import ParsedDocument, ParsedSection
 from app.modules.knowledge.processing.text_parser import TextParser
+from app.modules.knowledge.processing.xlsx_parser import XlsxParser
 
 
 class CharacterTokenCounter:
@@ -107,6 +108,7 @@ def test_parser_registry_selects_by_case_insensitive_extension() -> None:
     assert isinstance(registry.get_parser("notes.TXT"), TextParser)
     assert isinstance(registry.get_parser("README.Md"), MarkdownParser)
     assert isinstance(registry.get_parser("proposal.DOCX"), DocxParser)
+    assert isinstance(registry.get_parser("students.XLSX"), XlsxParser)
 
 
 def test_parser_registry_rejects_unsupported_extension() -> None:

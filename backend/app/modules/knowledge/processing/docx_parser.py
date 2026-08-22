@@ -4,7 +4,7 @@ import re
 from collections import defaultdict
 from io import BytesIO
 from typing import BinaryIO, Literal
-from zipfile import BadZipFile, LargeZipFile, ZipFile
+from zipfile import BadZipFile, LargeZipFile
 
 from docx import Document
 from docx.document import Document as DocxDocument
@@ -18,16 +18,18 @@ from app.modules.knowledge.processing.errors import (
     DocumentParseError,
     DocumentParseErrorCode,
 )
+from app.modules.knowledge.processing.office_archive import (
+    OfficeArchiveLimits,
+    OfficeArchiveValidationError,
+    validate_office_archive,
+)
 from app.modules.knowledge.processing.schemas import ParsedDocument, ParsedSection
 from app.modules.knowledge.source_locator import SectionSourceLocator
 
 
-DEFAULT_MAX_ARCHIVE_ENTRIES = 2_000
-DEFAULT_MAX_UNCOMPRESSED_BYTES = 100 * 1024 * 1024
-DEFAULT_MAX_ENTRY_UNCOMPRESSED_BYTES = 50 * 1024 * 1024
-DEFAULT_MAX_COMPRESSION_RATIO = 500
-REQUIRED_PACKAGE_PARTS = {"[Content_Types].xml", "word/document.xml"}
-MACRO_PART_SUFFIX = "vbaproject.bin"
+REQUIRED_PACKAGE_PARTS = frozenset(
+    {"[Content_Types].xml", "word/document.xml"}
+)
 HEADING_STYLE_PATTERN = re.compile(r"^(?:heading|标题)\s*([1-6])$", re.IGNORECASE)
 HEADING_STYLE_ID_PATTERN = re.compile(r"^heading([1-6])$", re.IGNORECASE)
 LIST_STYLE_MARKERS = ("list", "bullet", "number", "列表", "项目符号", "编号")
@@ -41,24 +43,18 @@ class DocxParser(BaseDocumentParser):
     def __init__(
         self,
         *,
-        max_archive_entries: int = DEFAULT_MAX_ARCHIVE_ENTRIES,
-        max_uncompressed_bytes: int = DEFAULT_MAX_UNCOMPRESSED_BYTES,
-        max_entry_uncompressed_bytes: int = DEFAULT_MAX_ENTRY_UNCOMPRESSED_BYTES,
-        max_compression_ratio: int = DEFAULT_MAX_COMPRESSION_RATIO,
+        max_archive_entries: int = 2_000,
+        max_uncompressed_bytes: int = 100 * 1024 * 1024,
+        max_entry_uncompressed_bytes: int = 50 * 1024 * 1024,
+        max_compression_ratio: int = 500,
     ) -> None:
         """保存压缩包资源上限，测试可使用更小上限验证安全失败路径。"""
-        limits = (
-            max_archive_entries,
-            max_uncompressed_bytes,
-            max_entry_uncompressed_bytes,
-            max_compression_ratio,
+        self.archive_limits = OfficeArchiveLimits(
+            max_entries=max_archive_entries,
+            max_uncompressed_bytes=max_uncompressed_bytes,
+            max_entry_uncompressed_bytes=max_entry_uncompressed_bytes,
+            max_compression_ratio=max_compression_ratio,
         )
-        if any(limit <= 0 for limit in limits):
-            raise ValueError("DOCX 压缩包资源上限必须大于零")
-        self.max_archive_entries = max_archive_entries
-        self.max_uncompressed_bytes = max_uncompressed_bytes
-        self.max_entry_uncompressed_bytes = max_entry_uncompressed_bytes
-        self.max_compression_ratio = max_compression_ratio
 
     async def parse(self, stream: BinaryIO) -> ParsedDocument:
         """先检查 OOXML 容器，再按 Word 正文中的真实段落/表格顺序提取内容。"""
@@ -97,47 +93,16 @@ class DocxParser(BaseDocumentParser):
         )
 
     def _validate_archive(self, content: bytes) -> None:
-        """仅检查 ZIP 元数据和必要包部件，不把不可信文件解压到磁盘。"""
+        """调用 OOXML 共用检查，并转换成 Word 领域的稳定错误。"""
         try:
-            with ZipFile(BytesIO(content)) as archive:
-                entries = archive.infolist()
-                names = {entry.filename for entry in entries}
-                if not REQUIRED_PACKAGE_PARTS.issubset(names):
-                    raise self._invalid_document_error()
-                if len(entries) > self.max_archive_entries:
-                    raise self._unsafe_archive_error("压缩包条目数量超过限制")
-
-                total_uncompressed = 0
-                for entry in entries:
-                    normalized_name = entry.filename.replace("\\", "/").lower()
-                    if entry.flag_bits & 0x1:
-                        raise self._unsafe_archive_error("不支持加密的 DOCX 压缩包")
-                    if normalized_name.endswith(MACRO_PART_SUFFIX):
-                        raise self._unsafe_archive_error("DOCX 中包含宏载荷")
-                    if entry.file_size > self.max_entry_uncompressed_bytes:
-                        raise self._unsafe_archive_error("单个压缩条目解压后过大")
-
-                    total_uncompressed += entry.file_size
-                    if total_uncompressed > self.max_uncompressed_bytes:
-                        raise self._unsafe_archive_error("压缩包解压后总大小超过限制")
-                    if self._compression_ratio(entry.file_size, entry.compress_size) > (
-                        self.max_compression_ratio
-                    ):
-                        raise self._unsafe_archive_error("压缩率异常，疑似压缩炸弹")
-
-                # 宏启用文档即使没有标准宏部件，也会在 Content Types 中留下声明。
-                content_types = archive.read("[Content_Types].xml").lower()
-                if b"macroenabled" in content_types:
-                    raise self._unsafe_archive_error("DOCX 声明为宏启用文档")
-        except DocumentParseError:
-            raise
-        except (
-            BadZipFile,
-            LargeZipFile,
-            KeyError,
-            RuntimeError,
-            NotImplementedError,
-        ) as exc:
+            validate_office_archive(
+                content,
+                required_parts=REQUIRED_PACKAGE_PARTS,
+                limits=self.archive_limits,
+            )
+        except OfficeArchiveValidationError as exc:
+            if exc.unsafe:
+                raise self._unsafe_archive_error(exc.reason) from exc
             raise self._invalid_document_error() from exc
 
     def _parse_body(self, document: DocxDocument) -> list[ParsedSection]:
@@ -271,15 +236,6 @@ class DocxParser(BaseDocumentParser):
     def _normalize_text(value: str) -> str:
         """保留可读正文，同时统一不换行空格和连续横向空白。"""
         return re.sub(r"[\t\u00a0 ]+", " ", value).strip()
-
-    @staticmethod
-    def _compression_ratio(uncompressed_size: int, compressed_size: int) -> float:
-        """空条目比例为零；非空但压缩后为零视为无限压缩率。"""
-        if uncompressed_size == 0:
-            return 0.0
-        if compressed_size == 0:
-            return float("inf")
-        return uncompressed_size / compressed_size
 
     @staticmethod
     def _invalid_document_error() -> DocumentParseError:

@@ -83,6 +83,8 @@ class SectionSourceLocator(_ImmutableLocator):
 CELL_RANGE_PATTERN = re.compile(
     r"^[A-Z]{1,3}[1-9][0-9]*:[A-Z]{1,3}[1-9][0-9]*$"
 )
+EXCEL_MAX_COLUMN = 16_384
+EXCEL_MAX_ROW = 1_048_576
 
 
 class SheetRangeSourceLocator(_ImmutableLocator):
@@ -107,6 +109,34 @@ class SheetRangeSourceLocator(_ImmutableLocator):
     def normalize_cell_range(cls, value: object) -> object:
         """将 Excel 地址统一为大写，便于比较、展示和测试。"""
         return value.strip().upper() if isinstance(value, str) else value
+
+    @model_validator(mode="after")
+    def validate_excel_bounds_and_order(self) -> "SheetRangeSourceLocator":
+        """数据和表头范围都必须位于 XLSX 边界内，且左上角不得越过右下角。"""
+        for value in (self.cell_range, self.header_range):
+            if value is None:
+                continue
+            start, end = value.split(":", maxsplit=1)
+            start_column, start_row = _parse_cell_address(start)
+            end_column, end_row = _parse_cell_address(end)
+            if (
+                start_column > end_column
+                or start_row > end_row
+                or end_column > EXCEL_MAX_COLUMN
+                or end_row > EXCEL_MAX_ROW
+            ):
+                raise ValueError("Excel 单元格范围顺序错误或超出 XLSX 边界")
+        return self
+
+
+def _parse_cell_address(address: str) -> tuple[int, int]:
+    """把已经通过正则的 A1 地址转换为一基列号和行号。"""
+    letters = "".join(character for character in address if character.isalpha())
+    row = int(address[len(letters) :])
+    column = 0
+    for character in letters:
+        column = column * 26 + ord(character) - ord("A") + 1
+    return column, row
 
 
 class NormalizedBoundingBox(_ImmutableLocator):
