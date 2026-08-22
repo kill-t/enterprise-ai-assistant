@@ -85,3 +85,4 @@
 79. [Word DOCX 解析与结构化内容块](79-docx-parser-and-structured-blocks.md)
 80. [Excel XLSX 解析与单元格范围引用](80-xlsx-parser-and-cell-range-citations.md)
 81. [扫描 PDF 与图片 OCR](81-scanned-pdf-and-image-ocr.md)
+82. [多格式 RAG 回归与来源位置准确率](82-multiformat-rag-evaluation.md)

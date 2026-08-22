@@ -100,9 +100,7 @@ class RagRetrievalEvaluationRunner:
 
         latency_ms = max(0.0, (self.clock() - started_at) * 1000)
         if response.knowledge_base_id != knowledge_base_id:
-            raise RagEvaluationRunError(
-                f"RAG 检索评测返回了错误知识库：{case.case_id}"
-            )
+            raise RagEvaluationRunError(f"RAG 检索评测返回了错误知识库：{case.case_id}")
 
         sources = tuple(
             RetrievedEvidence(
@@ -110,6 +108,8 @@ class RagRetrievalEvaluationRunner:
                 filename=hit.filename,
                 content=hit.content,
                 score=hit.score,
+                source_type=hit.source_type,
+                source_locator=hit.source_locator,
             )
             for hit in response.results
         )

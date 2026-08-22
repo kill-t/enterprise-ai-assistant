@@ -4,6 +4,7 @@ from pathlib import Path
 import pytest
 from pydantic import ValidationError
 
+from app.common.enums import SourceType
 from app.modules.knowledge.evaluation.dataset_loader import (
     RagEvaluationDatasetError,
     RagEvaluationDatasetLoader,
@@ -14,11 +15,13 @@ from app.modules.knowledge.evaluation.metrics import (
 )
 from app.modules.knowledge.evaluation.models import (
     ExpectedEvidence,
+    ExpectedPageSourceLocator,
     RagEvaluationCase,
     RagEvaluationObservation,
     RagExpectedBehavior,
     RetrievedEvidence,
 )
+from app.modules.knowledge.source_locator import PageSourceLocator
 
 
 def test_evaluation_case_normalizes_text_and_protects_behavior_contract() -> None:
@@ -213,6 +216,48 @@ def test_metrics_separate_overall_behavior_from_refusal_accuracy() -> None:
     assert report.tag_metrics[0].refusal_accuracy is None
     assert report.tag_metrics[1].behavior_accuracy == 1.0
     assert report.tag_metrics[1].refusal_accuracy == 1.0
+
+
+def test_source_location_accuracy_is_separate_from_content_recall() -> None:
+    """原文命中但 PDF 页码错误时 Recall 保持命中，位置准确率必须失败。"""
+    case = RagEvaluationCase(
+        case_id="pdf-page-location",
+        question="应急响应时间是多少？",
+        expected_behavior=RagExpectedBehavior.ANSWER,
+        expected_evidence=[
+            ExpectedEvidence(
+                filename="policy.pdf",
+                content_contains="十五分钟内响应",
+                source_type=SourceType.PDF,
+                source_locator=ExpectedPageSourceLocator(
+                    page_start=2,
+                    page_end=2,
+                ),
+            )
+        ],
+        tags=("PDF",),
+    )
+    observation = RagEvaluationObservation(
+        case_id=case.case_id,
+        retrieved_sources=(
+            RetrievedEvidence(
+                source_id="S1",
+                filename="policy.pdf",
+                content="严重故障必须在十五分钟内响应。",
+                source_type=SourceType.PDF,
+                source_locator=PageSourceLocator(page_start=1, page_end=1),
+            ),
+        ),
+        refused=False,
+    )
+
+    report = RagMetricsEvaluator(top_k=3).evaluate((case,), (observation,))
+
+    assert report.recall_at_k == 1.0
+    assert report.source_location_accuracy == 0.0
+    assert report.results[0].source_location_accuracy == 0.0
+    assert report.results[0].retrieved_sources[0].source_location_valid is False
+    assert report.tag_metrics[0].source_location_accuracy == 0.0
 
 
 def test_metrics_reject_missing_or_unexpected_observation() -> None:

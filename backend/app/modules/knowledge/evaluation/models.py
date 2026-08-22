@@ -1,9 +1,110 @@
 """定义可持久化评测样例、单次观测和最终报告的数据契约。"""
 
+import json
 from enum import Enum
-from typing import Literal
+from typing import Annotated, Literal, TypeAlias
 
 from pydantic import AliasChoices, BaseModel, Field, field_validator, model_validator
+
+from app.common.enums import SourceType
+from app.modules.knowledge.source_locator import (
+    DocumentSourceLocator,
+    SheetRangeSourceLocator,
+    SourceLocator,
+)
+
+
+class ExpectedDocumentSourceLocator(BaseModel):
+    """要求纯文本证据定位到整篇文档。"""
+
+    kind: Literal["document"] = "document"
+
+
+class ExpectedPageSourceLocator(BaseModel):
+    """要求 PDF 证据位于准确页码范围。"""
+
+    kind: Literal["page"] = "page"
+    page_start: int = Field(gt=0)
+    page_end: int = Field(gt=0)
+    heading_path: tuple[str, ...] = ()
+
+    @model_validator(mode="after")
+    def validate_page_order(self) -> "ExpectedPageSourceLocator":
+        """标准答案本身也不能配置倒置页码。"""
+        if self.page_end < self.page_start:
+            raise ValueError("标准证据结束页不能小于起始页")
+        return self
+
+
+class ExpectedSectionSourceLocator(BaseModel):
+    """要求 Markdown 或 Word 证据位于指定章节和可选内容块。"""
+
+    kind: Literal["section"] = "section"
+    heading_path: tuple[str, ...] = ()
+    block_kind: Literal["paragraph", "list", "table"] | None = None
+    block_index: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def validate_section_identity(self) -> "ExpectedSectionSourceLocator":
+        """章节路径或成对内容块必须至少提供一种稳定定位。"""
+        if (self.block_kind is None) != (self.block_index is None):
+            raise ValueError("标准证据 block_kind 与 block_index 必须同时提供")
+        if not self.heading_path and self.block_kind is None:
+            raise ValueError("标准章节证据必须包含标题路径或内容块位置")
+        return self
+
+
+class ExpectedSheetRangeSourceLocator(BaseModel):
+    """要求 Excel 证据位于指定工作表和单元格范围。"""
+
+    kind: Literal["sheet_range"] = "sheet_range"
+    sheet_name: str = Field(min_length=1, max_length=255)
+    cell_range: str = Field(min_length=1, max_length=30)
+    header_range: str | None = Field(default=None, max_length=30)
+
+    @field_validator("sheet_name", "cell_range", "header_range", mode="before")
+    @classmethod
+    def normalize_sheet_fields(cls, value: object) -> object:
+        """清理表名并统一单元格地址大小写。"""
+        if not isinstance(value, str):
+            return value
+        normalized = value.strip()
+        return normalized.upper() if ":" in normalized else normalized
+
+    @model_validator(mode="after")
+    def validate_excel_range(self) -> "ExpectedSheetRangeSourceLocator":
+        """复用正式 Locator 校验地址顺序和 XLSX 边界，避免无效标准答案。"""
+        SheetRangeSourceLocator(
+            sheet_name=self.sheet_name,
+            cell_range=self.cell_range,
+            header_range=self.header_range,
+        )
+        return self
+
+
+class ExpectedOcrRegionSourceLocator(BaseModel):
+    """要求 OCR 证据保留正确页码、最低置信度和引擎前缀。"""
+
+    kind: Literal["ocr_region"] = "ocr_region"
+    page_number: int | None = Field(default=None, gt=0)
+    min_confidence: float = Field(default=0.65, ge=0.0, le=1.0)
+    engine_prefix: str = Field(default="rapidocr", min_length=1, max_length=100)
+
+    @field_validator("engine_prefix", mode="before")
+    @classmethod
+    def normalize_engine_prefix(cls, value: object) -> object:
+        """清理引擎前缀，禁止用空白绕过版本审计。"""
+        return value.strip() if isinstance(value, str) else value
+
+
+ExpectedSourceLocator: TypeAlias = Annotated[
+    ExpectedDocumentSourceLocator
+    | ExpectedPageSourceLocator
+    | ExpectedSectionSourceLocator
+    | ExpectedSheetRangeSourceLocator
+    | ExpectedOcrRegionSourceLocator,
+    Field(discriminator="kind"),
+]
 
 
 class RagExpectedBehavior(str, Enum):
@@ -18,6 +119,8 @@ class ExpectedEvidence(BaseModel):
 
     filename: str = Field(min_length=1, max_length=255)
     content_contains: str = Field(min_length=1, max_length=2000)
+    source_type: SourceType | None = None
+    source_locator: ExpectedSourceLocator | None = None
 
     @field_validator("filename", "content_contains", mode="before")
     @classmethod
@@ -28,9 +131,23 @@ class ExpectedEvidence(BaseModel):
         return value
 
     @property
-    def identity(self) -> tuple[str, str]:
+    def identity(self) -> tuple[str, str, str, str]:
         """返回大小写不敏感的逻辑身份，用于识别重复标准证据。"""
-        return (self.filename.casefold(), self.content_contains.casefold())
+        locator = (
+            json.dumps(
+                self.source_locator.model_dump(mode="json"),
+                ensure_ascii=False,
+                sort_keys=True,
+            )
+            if self.source_locator is not None
+            else ""
+        )
+        return (
+            self.filename.casefold(),
+            self.content_contains.casefold(),
+            self.source_type.value if self.source_type is not None else "",
+            locator,
+        )
 
 
 class RagEvaluationCase(BaseModel):
@@ -97,6 +214,8 @@ class RetrievedEvidence(BaseModel):
     filename: str = Field(min_length=1, max_length=255)
     content: str = Field(min_length=1)
     score: float | None = Field(default=None, ge=-1.0, le=1.0)
+    source_type: SourceType = SourceType.TEXT
+    source_locator: SourceLocator = Field(default_factory=DocumentSourceLocator)
 
     @field_validator("source_id", "filename", "content", mode="before")
     @classmethod
@@ -134,7 +253,9 @@ class RagEvaluationObservation(BaseModel):
         if value is None:
             return value
         if isinstance(value, (list, tuple)):
-            return tuple(item.strip() if isinstance(item, str) else item for item in value)
+            return tuple(
+                item.strip() if isinstance(item, str) else item for item in value
+            )
         return value
 
     @model_validator(mode="after")
@@ -158,6 +279,8 @@ class RagRetrievedSourceEvaluation(BaseModel):
     filename: str
     score: float | None = Field(default=None, ge=-1.0, le=1.0)
     relevant: bool
+    source_type: SourceType = SourceType.TEXT
+    source_location_valid: bool | None = None
 
 
 class RagCaseEvaluationResult(BaseModel):
@@ -171,6 +294,9 @@ class RagCaseEvaluationResult(BaseModel):
         validation_alias=AliasChoices("behavior_correct", "refusal_correct")
     )
     citation_valid: bool | None
+    source_location_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
+    matched_source_location_count: int = Field(default=0, ge=0)
+    expected_source_location_count: int = Field(default=0, ge=0)
     matched_evidence_count: int = Field(ge=0)
     expected_evidence_count: int = Field(ge=0)
     latency_ms: float | None = Field(default=None, ge=0.0)
@@ -193,6 +319,7 @@ class RagTagMetrics(BaseModel):
     mean_reciprocal_rank: float | None = Field(default=None, ge=0.0, le=1.0)
     behavior_accuracy: float = Field(ge=0.0, le=1.0)
     refusal_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
+    source_location_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
 
 
 class RagSelectorUsageSummary(BaseModel):
@@ -232,6 +359,7 @@ class RagEvaluationReport(BaseModel):
     behavior_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
     refusal_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
     citation_validity_rate: float | None = Field(default=None, ge=0.0, le=1.0)
+    source_location_accuracy: float | None = Field(default=None, ge=0.0, le=1.0)
     average_latency_ms: float | None = Field(default=None, ge=0.0)
     p95_latency_ms: float | None = Field(default=None, ge=0.0)
     results: tuple[RagCaseEvaluationResult, ...]

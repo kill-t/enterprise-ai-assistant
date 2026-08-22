@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 import pytest
 
+from app.common.enums import SourceType
 from app.modules.knowledge.evaluation.metrics import RagMetricsEvaluator
 from app.modules.knowledge.evaluation.models import (
     ExpectedEvidence,
@@ -22,6 +23,11 @@ from app.modules.knowledge.evaluation.runner import (
 from app.modules.knowledge.schema.knowledge_search_schema import (
     KnowledgeSearchHit,
     KnowledgeSearchResponse,
+)
+from app.modules.knowledge.source_locator import (
+    DocumentSourceLocator,
+    PageSourceLocator,
+    SourceLocator,
 )
 
 
@@ -42,6 +48,11 @@ def test_retrieval_runner_calls_search_service_and_builds_metrics() -> None:
                             filename="project.md",
                             content="蓝鲸项目负责人是林晓。",
                             score=0.91,
+                            source_type=SourceType.PDF,
+                            source_locator=PageSourceLocator(
+                                page_start=2,
+                                page_end=2,
+                            ),
                         )
                     ],
                 ),
@@ -110,6 +121,7 @@ def test_retrieval_runner_calls_search_service_and_builds_metrics() -> None:
     assert report.results[0].top_score == 0.91
     assert report.results[0].retrieved_sources[0].rank == 1
     assert report.results[0].retrieved_sources[0].relevant is True
+    assert report.results[0].retrieved_sources[0].source_type == SourceType.PDF
     assert report.results[1].retrieved_count == 0
     assert report.results[1].top_score is None
     assert report.results[1].latency_ms == pytest.approx(4.0)
@@ -179,6 +191,7 @@ def test_report_writer_outputs_utf8_json_and_readable_markdown(tmp_path: Path) -
     assert "# RAG 评测报告" in markdown
     assert "Recall@1" in markdown
     assert "引用有效率 | 不适用" in markdown
+    assert "来源位置准确率 | 不适用" in markdown
     assert "整体行为准确率" in markdown
     assert "拒答题准确率" in markdown
     assert "## 按标签诊断" in markdown
@@ -258,6 +271,8 @@ def build_hit(
     filename: str,
     content: str,
     score: float,
+    source_type: SourceType = SourceType.TEXT,
+    source_locator: SourceLocator = DocumentSourceLocator(),
 ) -> KnowledgeSearchHit:
     """构造一条带来源位置的模拟 Chunk。"""
     return KnowledgeSearchHit(
@@ -271,4 +286,6 @@ def build_hit(
         page_end=None,
         token_count=20,
         score=score,
+        source_type=source_type,
+        source_locator=source_locator,
     )

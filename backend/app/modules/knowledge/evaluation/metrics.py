@@ -4,7 +4,12 @@ import math
 from statistics import fmean
 
 from app.modules.knowledge.evaluation.models import (
+    ExpectedDocumentSourceLocator,
     ExpectedEvidence,
+    ExpectedOcrRegionSourceLocator,
+    ExpectedPageSourceLocator,
+    ExpectedSectionSourceLocator,
+    ExpectedSheetRangeSourceLocator,
     RagCaseEvaluationResult,
     RagEvaluationCase,
     RagEvaluationObservation,
@@ -13,6 +18,13 @@ from app.modules.knowledge.evaluation.models import (
     RagRetrievedSourceEvaluation,
     RagTagMetrics,
     RetrievedEvidence,
+)
+from app.modules.knowledge.source_locator import (
+    DocumentSourceLocator,
+    OcrRegionSourceLocator,
+    PageSourceLocator,
+    SectionSourceLocator,
+    SheetRangeSourceLocator,
 )
 
 
@@ -51,8 +63,7 @@ class RagMetricsEvaluator:
             raise RagEvaluationError(f"评测结果缺少 case_id：{missing}")
 
         results = tuple(
-            self._evaluate_case(case, observation_by_id[case.case_id])
-            for case in cases
+            self._evaluate_case(case, observation_by_id[case.case_id]) for case in cases
         )
         answer_results = [
             result for result in results if result.recall_at_k is not None
@@ -65,14 +76,13 @@ class RagMetricsEvaluator:
             if case.expected_behavior == RagExpectedBehavior.REFUSE
         ]
         citation_results = [
-            result
-            for result in results
-            if result.citation_valid is not None
+            result for result in results if result.citation_valid is not None
+        ]
+        location_results = [
+            result for result in results if result.source_location_accuracy is not None
         ]
         latencies = sorted(
-            result.latency_ms
-            for result in results
-            if result.latency_ms is not None
+            result.latency_ms for result in results if result.latency_ms is not None
         )
         embedding_model, similarity_threshold = self._resolve_search_metadata(
             observations
@@ -106,6 +116,11 @@ class RagMetricsEvaluator:
                 if citation_results
                 else None
             ),
+            source_location_accuracy=(
+                fmean(result.source_location_accuracy for result in location_results)
+                if location_results
+                else None
+            ),
             average_latency_ms=fmean(latencies) if latencies else None,
             p95_latency_ms=self._nearest_rank_percentile(latencies, 0.95),
             results=results,
@@ -118,9 +133,7 @@ class RagMetricsEvaluator:
     ) -> tuple[str | None, float | None]:
         """要求整批观测使用同一模型和阈值，避免把不同配置混成一个基线。"""
         models = [observation.embedding_model for observation in observations]
-        thresholds = [
-            observation.similarity_threshold for observation in observations
-        ]
+        thresholds = [observation.similarity_threshold for observation in observations]
         if any(value is None for value in models) != all(
             value is None for value in models
         ):
@@ -157,8 +170,13 @@ class RagMetricsEvaluator:
                 filename=source.filename,
                 score=source.score,
                 relevant=any(
-                    self._matches(evidence, source)
+                    self._matches_content(evidence, source)
                     for evidence in case.expected_evidence
+                ),
+                source_type=source.source_type,
+                source_location_valid=self._source_location_valid_for_result(
+                    case.expected_evidence,
+                    source,
                 ),
             )
             for rank, source in enumerate(observation.retrieved_sources, start=1)
@@ -185,15 +203,28 @@ class RagMetricsEvaluator:
 
         top_sources = observation.retrieved_sources[: self.top_k]
         matched_count = sum(
-            any(self._matches(evidence, source) for source in top_sources)
+            any(self._matches_content(evidence, source) for source in top_sources)
             for evidence in case.expected_evidence
+        )
+        location_expectations = tuple(
+            evidence
+            for evidence in case.expected_evidence
+            if evidence.source_type is not None or evidence.source_locator is not None
+        )
+        matched_location_count = sum(
+            any(
+                self._matches_content(evidence, source)
+                and self._matches_source_location(evidence, source)
+                for source in top_sources
+            )
+            for evidence in location_expectations
         )
         first_relevant_rank = next(
             (
                 rank
                 for rank, source in enumerate(top_sources, start=1)
                 if any(
-                    self._matches(evidence, source)
+                    self._matches_content(evidence, source)
                     for evidence in case.expected_evidence
                 )
             ),
@@ -208,6 +239,13 @@ class RagMetricsEvaluator:
             ),
             behavior_correct=behavior_correct,
             citation_valid=citation_valid,
+            source_location_accuracy=(
+                matched_location_count / len(location_expectations)
+                if location_expectations
+                else None
+            ),
+            matched_source_location_count=matched_location_count,
+            expected_source_location_count=len(location_expectations),
             matched_evidence_count=matched_count,
             expected_evidence_count=len(case.expected_evidence),
             latency_ms=observation.latency_ms,
@@ -229,9 +267,7 @@ class RagMetricsEvaluator:
         metrics: list[RagTagMetrics] = []
         for tag in tags:
             selected = [
-                (case, result)
-                for case, result in tagged_results
-                if tag in case.tags
+                (case, result) for case, result in tagged_results if tag in case.tags
             ]
             answer_results = [
                 result
@@ -242,6 +278,11 @@ class RagMetricsEvaluator:
                 result
                 for case, result in selected
                 if case.expected_behavior == RagExpectedBehavior.REFUSE
+            ]
+            location_results = [
+                result
+                for _, result in selected
+                if result.source_location_accuracy is not None
             ]
             metrics.append(
                 RagTagMetrics(
@@ -263,10 +304,16 @@ class RagMetricsEvaluator:
                         result.behavior_correct for _, result in selected
                     ),
                     refusal_accuracy=(
-                        fmean(
-                            result.behavior_correct for result in refusal_results
-                        )
+                        fmean(result.behavior_correct for result in refusal_results)
                         if refusal_results
+                        else None
+                    ),
+                    source_location_accuracy=(
+                        fmean(
+                            result.source_location_accuracy
+                            for result in location_results
+                        )
+                        if location_results
                         else None
                     ),
                 )
@@ -274,7 +321,7 @@ class RagMetricsEvaluator:
         return tuple(metrics)
 
     @staticmethod
-    def _matches(
+    def _matches_content(
         expected: ExpectedEvidence,
         retrieved: RetrievedEvidence,
     ) -> bool:
@@ -284,6 +331,82 @@ class RagMetricsEvaluator:
             and expected.content_contains.casefold() in retrieved.content.casefold()
         )
 
+    @classmethod
+    def _source_location_valid_for_result(
+        cls,
+        expected_evidence: tuple[ExpectedEvidence, ...],
+        retrieved: RetrievedEvidence,
+    ) -> bool | None:
+        """只给命中标准原文且配置了位置期望的来源生成位置诊断。"""
+        matching_expectations = tuple(
+            evidence
+            for evidence in expected_evidence
+            if cls._matches_content(evidence, retrieved)
+            and (
+                evidence.source_type is not None or evidence.source_locator is not None
+            )
+        )
+        if not matching_expectations:
+            return None
+        return any(
+            cls._matches_source_location(evidence, retrieved)
+            for evidence in matching_expectations
+        )
+
+    @staticmethod
+    def _matches_source_location(
+        expected: ExpectedEvidence,
+        retrieved: RetrievedEvidence,
+    ) -> bool:
+        """按来源类型和各格式稳定字段判断位置，不比较易漂移的 OCR 精确坐标。"""
+        if (
+            expected.source_type is not None
+            and expected.source_type != retrieved.source_type
+        ):
+            return False
+        locator = expected.source_locator
+        if locator is None:
+            return True
+        actual = retrieved.source_locator
+        if isinstance(locator, ExpectedDocumentSourceLocator):
+            return isinstance(actual, DocumentSourceLocator)
+        if isinstance(locator, ExpectedPageSourceLocator):
+            return (
+                isinstance(actual, PageSourceLocator)
+                and actual.page_start == locator.page_start
+                and actual.page_end == locator.page_end
+                and actual.heading_path == locator.heading_path
+            )
+        if isinstance(locator, ExpectedSectionSourceLocator):
+            return (
+                isinstance(actual, SectionSourceLocator)
+                and actual.heading_path == locator.heading_path
+                and (
+                    locator.block_kind is None
+                    or (
+                        actual.block_kind == locator.block_kind
+                        and actual.block_index == locator.block_index
+                    )
+                )
+            )
+        if isinstance(locator, ExpectedSheetRangeSourceLocator):
+            return (
+                isinstance(actual, SheetRangeSourceLocator)
+                and actual.sheet_name == locator.sheet_name
+                and actual.cell_range == locator.cell_range
+                and actual.header_range == locator.header_range
+            )
+        if isinstance(locator, ExpectedOcrRegionSourceLocator):
+            return (
+                isinstance(actual, OcrRegionSourceLocator)
+                and actual.page_number == locator.page_number
+                and actual.confidence >= locator.min_confidence
+                and actual.engine.casefold().startswith(
+                    locator.engine_prefix.casefold()
+                )
+            )
+        return False
+
     @staticmethod
     def _is_citation_valid(observation: RagEvaluationObservation) -> bool | None:
         """只在回答层实际运行后判断引用；纯检索观测返回不适用。"""
@@ -292,9 +415,7 @@ class RagMetricsEvaluator:
         if observation.refused:
             return not observation.cited_source_ids
 
-        retrieved_ids = {
-            source.source_id for source in observation.retrieved_sources
-        }
+        retrieved_ids = {source.source_id for source in observation.retrieved_sources}
         cited_ids = set(observation.cited_source_ids)
         return bool(cited_ids) and cited_ids.issubset(retrieved_ids)
 

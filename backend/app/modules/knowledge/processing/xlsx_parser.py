@@ -162,9 +162,13 @@ class XlsxParser(BaseDocumentParser):
         for formula_sheet in formula_workbook.worksheets:
             if formula_sheet.sheet_state != "visible":
                 continue
+            # OOXML 允许省略工作表 dimension；这时 openpyxl 只读模式会返回 None。
+            # 预检查仅在尺寸已知时快速失败，尺寸未知仍由后续逐行、逐列和单元格计数兜底。
+            known_max_row = formula_sheet.max_row or 0
+            known_max_column = formula_sheet.max_column or 0
             if (
-                formula_sheet.max_row > self.max_rows_per_sheet
-                or formula_sheet.max_column > self.max_columns_per_sheet
+                known_max_row > self.max_rows_per_sheet
+                or known_max_column > self.max_columns_per_sheet
             ):
                 raise self._limit_error(
                     f"工作表“{formula_sheet.title}”的行列范围超过限制"

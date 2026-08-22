@@ -28,6 +28,32 @@ evaluation/
 
 困难集基线同时记录“整体行为准确率”和“拒答题准确率”。前者观察所有题是否正确选择回答或拒答，后者只观察标准拒答题，二者不能混为一个指标。
 
+第三批多格式回归资产：
+
+- `corpus/multiformat-v3/`：Markdown、TXT、文本 PDF、DOCX、XLSX、图片 OCR 和扫描 PDF OCR 七份固定语料。
+- `datasets/rag-v3-multiformat.jsonl`：28 道可回答题和 7 道资料缺失拒答题。
+- `baselines/rag-v3-multiformat-mock.json`：不含来源 UUID 和机器延迟的 Mock 向量质量基线。
+- `baselines/rag-v3-multiformat-mock.md`：中文基线说明与逐格式指标。
+
+多格式回归会调用正式 Parser、Token Chunker 和 Mock Embedding，但在进程内执行余弦排序，不依赖
+PostgreSQL、MinIO 或 API Key。它验证“每种文件能否稳定变成可检索且可定位的 Chunk”，不替代在线环境的
+用户隔离、任务恢复、pgvector 索引或真实语义模型评测。
+
+在 `backend` 目录执行：
+
+```powershell
+.\.venv\Scripts\python.exe -m app.modules.knowledge.evaluation.offline_cli `
+  --corpus-directory "evaluation\corpus\multiformat-v3" `
+  --dataset "evaluation\datasets\rag-v3-multiformat.jsonl" `
+  --top-k 3 `
+  --similarity-threshold 0.2 `
+  --output-directory "evaluation\reports" `
+  --report-name "rag-v3-multiformat-mock-local"
+```
+
+本地报告保留来源诊断和真实运行延迟，因此只写到被 Git 忽略的 `reports/`。版本化 Mock 基线由维护者在
+确认语料和指标变化后显式更新，不应在普通测试中自动覆盖。
+
 运行前应把受控语料上传到目标知识库并等待文档状态变为 `READY`。然后在 `backend` 目录执行：
 
 ```powershell

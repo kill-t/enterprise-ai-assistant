@@ -66,8 +66,7 @@ class RagEvaluationReportWriter:
             f"| 检索策略 | {report.retrieval_strategy or '未记录'} |",
             f"| 证据选择器 | {report.evidence_selector or '未记录'} |",
             f"| Embedding 模型 | {report.embedding_model or '不适用'} |",
-            "| 相似度阈值 | "
-            f"{self._format_number(report.similarity_threshold)} |",
+            f"| 相似度阈值 | {self._format_number(report.similarity_threshold)} |",
             f"| 样例总数 | {report.total_cases} |",
             f"| 可回答样例 | {report.answer_cases} |",
             f"| 拒答样例 | {report.refusal_cases} |",
@@ -76,6 +75,7 @@ class RagEvaluationReportWriter:
             f"| 整体行为准确率 | {self._format_rate(report.behavior_accuracy)} |",
             f"| 拒答题准确率 | {self._format_rate(report.refusal_accuracy)} |",
             f"| 引用有效率 | {self._format_rate(report.citation_validity_rate)} |",
+            f"| 来源位置准确率 | {self._format_rate(report.source_location_accuracy)} |",
             f"| 平均检索延迟 | {self._format_latency(report.average_latency_ms)} |",
             f"| P95 检索延迟 | {self._format_latency(report.p95_latency_ms)} |",
         ]
@@ -97,10 +97,10 @@ class RagEvaluationReportWriter:
         lines.extend(
             [
                 "",
-            "## 逐题明细",
-            "",
-            "| case_id | Recall | RR | 召回数 | Top 分数 | 行为正确 | 引用有效 | 延迟 |",
-            "| --- | ---: | ---: | ---: | ---: | :---: | :---: | ---: |",
+                "## 逐题明细",
+                "",
+                "| case_id | Recall | RR | 位置准确率 | 召回数 | Top 分数 | 行为正确 | 引用有效 | 延迟 |",
+                "| --- | ---: | ---: | ---: | ---: | ---: | :---: | :---: | ---: |",
             ]
         )
         for result in report.results:
@@ -109,6 +109,7 @@ class RagEvaluationReportWriter:
                 f"{result.case_id} | "
                 f"{self._format_rate(result.recall_at_k)} | "
                 f"{self._format_rate(result.reciprocal_rank)} | "
+                f"{self._format_rate(result.source_location_accuracy)} | "
                 f"{result.retrieved_count} | "
                 f"{self._format_number(result.top_score)} | "
                 f"{self._format_bool(result.behavior_correct)} | "
@@ -120,8 +121,8 @@ class RagEvaluationReportWriter:
                 "",
                 "## 按标签诊断",
                 "",
-                "| 标签 | 样例 | 答案题 | 拒答题 | Recall | MRR | 整体行为 | 拒答题准确率 |",
-                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
+                "| 标签 | 样例 | 答案题 | 拒答题 | Recall | MRR | 位置准确率 | 整体行为 | 拒答题准确率 |",
+                "| --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: | ---: |",
             ]
         )
         for metric in report.tag_metrics:
@@ -133,6 +134,7 @@ class RagEvaluationReportWriter:
                 f"{metric.refusal_cases} | "
                 f"{self._format_rate(metric.recall_at_k)} | "
                 f"{self._format_rate(metric.mean_reciprocal_rank)} | "
+                f"{self._format_rate(metric.source_location_accuracy)} | "
                 f"{self._format_rate(metric.behavior_accuracy)} | "
                 f"{self._format_rate(metric.refusal_accuracy)} |"
             )
