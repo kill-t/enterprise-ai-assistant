@@ -76,8 +76,8 @@ flowchart TD
 ```powershell
 git clone https://github.com/kill-t/enterprise-ai-assistant.git
 Set-Location enterprise-ai-assistant
-# 当前完整功能所在开发分支
-git switch codex/week1-foundation
+# main 分支包含当前完整功能
+git switch main
 
 Set-Location backend
 uv sync --locked
